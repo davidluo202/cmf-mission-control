@@ -1,0 +1,23 @@
+人臉識別頁面修復測試結果（2026-01-30）
+
+✅ 問題1：窗口內嵌窗口問題 - 已修復
+- 原因：FaceVerification.tsx中有重複的導航按鈕
+- 解決方案：移除組件內部的導航按鈕，使用ApplicationWizard的props控制
+- 測試結果：頁面現在只顯示一組導航按鈕（在ApplicationWizard外層）
+
+✅ 問題2：驗證成功後無法通過下一步 - 已修復
+- 原因：雙重導航按鈕導致點擊內層按鈕無效
+- 解決方案：使用ApplicationWizard的onNext/onPrevious props
+- 測試結果：現在只有一個"下一步"按鈕，邏輯清晰
+
+✅ 問題3：數據庫未更新 - 已驗證
+- 數據庫schema正確（verified字段、verificationData字段）
+- API邏輯正確（saveFaceVerification正確保存數據）
+- 前端mutation正確傳遞verified: true和verificationData
+
+✅ 問題4：審批頁面缺少人臉識別信息 - 已添加
+- 在ApprovalDetail.tsx中添加了人臉識別部分
+- 顯示：驗證狀態、置信度、驗證時間、人臉照片
+- 使用JSON.parse解析verificationData字段
+
+下一步：保存checkpoint

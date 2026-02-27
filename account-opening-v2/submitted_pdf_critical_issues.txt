@@ -1,0 +1,37 @@
+提交后PDF的严重问题！
+========================
+
+PDF文件：CMF-ACAPP-260226-001-final.pdf（从S3下载，提交后系统发送给客户的版本）
+文件大小：146834字节（143KB）
+页数：3页
+
+❌ 严重问题：风险评估问卷完全缺失！
+------------------------------------
+
+第2页"5. 投资信息 Investment Information"部分：
+- 风险承受能力 Risk Tolerance: **N/A**
+
+**完全没有风险评估问卷的内容！**
+- 没有10个问题和答案
+- 没有总分（580）
+- 没有风险等级（Medium to High）
+- 没有风险描述
+
+第3页签名部分：
+✅ 签名 Signature: xintao Luo
+✅ 签署方式 Signature Method: typed
+✅ 签署时间 Signature Timestamp: 26/2/2026 下午12:48:38
+
+对比之前下载的预览PDF（23:44版本，190KB，4页）：
+- 预览PDF正确显示了完整的风险评估问卷
+- 提交后的PDF却完全没有风险评估问卷
+
+问题根源：
+=========
+提交申请时调用的PDF生成API与预览PDF生成API不同！
+- 预览PDF：使用`application.generatePreviewPDF` API（已修复，正确传递riskQuestionnaire数据）
+- 提交PDF：使用`application.submit` API，该API内部调用PDF生成器时可能没有传递riskQuestionnaire数据
+
+需要检查：
+1. `application.submit` API的PDF生成逻辑
+2. 确保提交时也传递完整的riskQuestionnaire数据
