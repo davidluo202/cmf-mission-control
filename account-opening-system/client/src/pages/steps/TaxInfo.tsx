@@ -9,9 +9,10 @@ import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 
 export default function TaxInfo() {
-  const params = useParams<{ id: string }>();
+  const params = useParams<{ id: string; step?: string }>();
   const [, setLocation] = useLocation();
   const applicationId = parseInt(params.id || "0");
+  const stepNum = parseInt(params.step || "10");
   const showReturnToPreview = useReturnToPreview();
 
   const [formData, setFormData] = useState({
@@ -21,8 +22,12 @@ export default function TaxInfo() {
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // 获取个人基本信息以自动填充税务居住地和证件号码
+  // 获取个人/机构基本信息以自动填充税务居住地和证件号码
   const { data: basicInfo } = trpc.personalBasic.get.useQuery(
+    { applicationId },
+    { enabled: !!applicationId }
+  );
+  const { data: corporateInfo } = trpc.corporateBasic.get.useQuery(
     { applicationId },
     { enabled: !!applicationId }
   );
@@ -41,7 +46,7 @@ export default function TaxInfo() {
     onSuccess: (result) => {
       if (result.success && result.data) {
         toast.success("保存成功");
-        setLocation(`/application/${applicationId}/step/11`);
+        setLocation(`/application/${applicationId}/step/${stepNum + 1}`);
       }
     },
     onError: (error) => {
@@ -61,17 +66,23 @@ export default function TaxInfo() {
   });
 
   useEffect(() => {
-    // 優先從basicInfo和detailedInfo自動同步最新數據
-    if (basicInfo && detailedInfo) {
+    // 優先使用已保存數據，若無已保存數據則用默認值填充
+    if (existingData && (existingData.taxResidency || existingData.taxIdNumber)) {
+      setFormData(existingData);
+    } else if (corporateInfo) {
+      // 機構：納稅居住國=註冊國家，稅務編號=商業登記證號碼
+      setFormData({
+        taxResidency: corporateInfo.countryOfIncorporation,
+        taxIdNumber: corporateInfo.businessRegistrationNo,
+      });
+    } else if (basicInfo && detailedInfo) {
+      // 個人：從基本信息獲取
       setFormData({
         taxResidency: basicInfo.nationality,
         taxIdNumber: detailedInfo.idNumber,
       });
-    } else if (existingData) {
-      // 如果沒有basicInfo和detailedInfo，則使用已保存的數據
-      setFormData(existingData);
     }
-  }, [basicInfo, detailedInfo, existingData]);
+  }, [basicInfo, detailedInfo, corporateInfo, existingData]);
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
@@ -109,7 +120,7 @@ const handleSave = () => {
 
   if (isLoadingData) {
     return (
-      <ApplicationWizard applicationId={applicationId} currentStep={10}
+      <ApplicationWizard applicationId={applicationId} currentStep={stepNum}
       showReturnToPreview={showReturnToPreview}
     >
         <div className="flex justify-center py-12">
@@ -122,7 +133,7 @@ const handleSave = () => {
   return (
     <ApplicationWizard
       applicationId={applicationId}
-      currentStep={10}
+      currentStep={stepNum}
       onNext={handleNext}
       onSave={handleSave}
       isNextLoading={saveMutation.isPending}
