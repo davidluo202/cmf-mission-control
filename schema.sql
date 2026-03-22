@@ -68,3 +68,38 @@ INSERT OR IGNORE INTO agent_status (agent_id, agent_name, model_name) VALUES
     ('imax', 'Imax (DevOps)', 'google/gemini-3.1-pro'),
     ('nas', 'Nas (Research)', 'anthropic/claude-sonnet-4-6'),
     ('davvy', 'Davvy (PM)', 'minimax/MiniMax-M2.5');
+
+-- Host machine info table (one per machine, linked to agents)
+CREATE TABLE IF NOT EXISTS host_info (
+    host_id TEXT PRIMARY KEY,
+    hostname TEXT,
+    ip_local TEXT,
+    ip_tailscale TEXT,
+    os_name TEXT,
+    os_version TEXT,
+    cpu_model TEXT,
+    cpu_cores INTEGER,
+    ram_total_gb REAL,
+    disk_total_gb REAL,
+    agents TEXT, -- JSON array of agent_ids running on this host
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+
+-- Host metrics (periodic snapshots)
+CREATE TABLE IF NOT EXISTS host_metrics (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    host_id TEXT NOT NULL,
+    cpu_usage_pct REAL,
+    ram_used_gb REAL,
+    disk_used_gb REAL,
+    net_bandwidth_mbps REAL,
+    net_latency_ms REAL,
+    recorded_at TEXT DEFAULT (datetime('now'))
+);
+
+-- Seed host info
+INSERT OR IGNORE INTO host_info (host_id, hostname, os_name, agents) VALUES
+    ('nas-ubuntu', 'Ugreen NAS Ubuntu VM', 'Ubuntu', '["nas"]'),
+    ('office-macmini', 'Office Mac Mini', 'macOS', '["nova","qual"]'),
+    ('home-macmini', 'Home Mac Mini (Bing)', 'macOS', '["davvy","icy"]'),
+    ('office-imac', 'Office iMac', 'macOS', '["imax"]');
