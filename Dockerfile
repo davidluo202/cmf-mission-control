@@ -1,15 +1,14 @@
 FROM node:20-slim
+WORKDIR /app/server
+
+# Install server dependencies (npm install, no lockfile required)
+COPY server/package.json ./
+RUN npm install --omit=dev --no-audit --no-fund
+
+# Copy server code and schema
+COPY server/index.js ./
 WORKDIR /app
-
-# Copy schema to root
 COPY schema.sql ./
-
-# Install server dependencies
-COPY server/package*.json ./server/
-RUN cd server && npm ci --omit=dev
-
-# Copy server code
-COPY server/index.js ./server/
 
 # Create data directory
 RUN mkdir -p /data
