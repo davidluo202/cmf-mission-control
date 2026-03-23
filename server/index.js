@@ -102,6 +102,30 @@ function auth(req, res, next) {
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
+// Public: root landing
+app.get('/', (req, res) => {
+  const agentCount = db.prepare('SELECT COUNT(*) as c FROM agent_status').get().c;
+  const eventCount = db.prepare('SELECT COUNT(*) as c FROM events').get().c;
+  res.json({
+    service: 'CMF Mission Control Server',
+    version: '0.2.0',
+    status: 'running',
+    endpoints: [
+      'GET  /health',
+      'GET  /api/overview',
+      'GET  /api/status/all',
+      'GET  /api/events',
+      'GET  /api/tasks',
+      'GET  /api/decisions',
+      'POST /api/status',
+      'POST /api/event',
+      'POST /api/task',
+      'POST /api/decision'
+    ],
+    db: { agents: agentCount, events: eventCount }
+  });
+});
+
 // Public: health check
 app.get('/health', (req, res) => {
   const agentCount = db.prepare('SELECT COUNT(*) as c FROM agent_status').get().c;
