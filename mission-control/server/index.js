@@ -61,9 +61,31 @@ function auth(req, res, next) {
 
 // === Routes ===
 
+// Root (no auth) - friendly landing
+app.get('/', (req, res) => {
+  const agents = db.prepare('SELECT COUNT(*) as count FROM agent_status').get();
+  const events = db.prepare('SELECT COUNT(*) as count FROM events').get();
+  res.json({
+    service: 'CMF Mission Control Server',
+    version: '0.2.0',
+    status: 'running',
+    endpoints: [
+      'GET  /health',
+      'GET  /api/overview',
+      'GET  /api/status/all',
+      'GET  /api/events',
+      'POST /api/status',
+      'POST /api/event'
+    ],
+    db: { agents: agents.count, events: events.count }
+  });
+});
+
 // Health check (no auth)
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', service: 'mission-control', version: '0.1.0' });
+  const agents = db.prepare('SELECT COUNT(*) as count FROM agent_status').get();
+  const events = db.prepare('SELECT COUNT(*) as count FROM events').get();
+  res.json({ status: 'ok', service: 'mission-control', version: '0.2.0', db: { agents: agents.count, events: events.count } });
 });
 
 // POST /api/status - Agent 上报状态
