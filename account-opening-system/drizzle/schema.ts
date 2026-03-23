@@ -61,7 +61,7 @@ export const applications = mysqlTable("applications", {
   signatureMethod: mysqlEnum("signatureMethod", ["typed", "iamsmart"]), // 签署方式：输入姓名或iAM Smart
   // 审批相关字段
   isProfessionalInvestor: boolean("isProfessionalInvestor").default(false), // 是否为专业投资者（PI）
-  approvedRiskProfile: mysqlEnum("approvedRiskProfile", ["R1", "R2", "R3", "R4", "R5"]), // 审批人员评估的风险等级：R1(低风险) R2(中低风险) R3(中风险) R4(中高风险) R5(高风险)
+  approvedRiskProfile: mysqlEnum("approvedRiskProfile", ["Lowest", "Low", "Low to Medium", "Medium", "Medium to High", "High"]), // 审批人员评估的风险等级（新6级评分系统）
   // 第一级审批字段
   firstApprovalStatus: mysqlEnum("firstApprovalStatus", ["pending", "approved", "rejected"]).default("pending"), // 第一级审批状态
   firstApprovalBy: varchar("firstApprovalBy", { length: 200 }), // 第一级审批人员ID
@@ -70,7 +70,7 @@ export const applications = mysqlTable("applications", {
   firstApprovalAt: timestamp("firstApprovalAt"), // 第一级审批时间
   firstApprovalComments: text("firstApprovalComments"), // 第一级审批意见
   firstApprovalIsProfessionalInvestor: boolean("firstApprovalIsProfessionalInvestor"), // 初审人员认定的PI状态
-  firstApprovalRiskProfile: mysqlEnum("firstApprovalRiskProfile", ["R1", "R2", "R3", "R4", "R5"]), // 初审人员评估的风险等级
+  firstApprovalRiskProfile: mysqlEnum("firstApprovalRiskProfile", ["Lowest", "Low", "Low to Medium", "Medium", "Medium to High", "High"]), // 初审人员评估的风险等级（新6级评分系统）
   // 第二级审批字段（合规部终审）
   secondApprovalStatus: mysqlEnum("secondApprovalStatus", ["pending", "approved", "rejected"]).default("pending"), // 第二级审批状态
   secondApprovalBy: varchar("secondApprovalBy", { length: 200 }), // 第二级审批人员ID
@@ -92,6 +92,33 @@ export const accountSelections = mysqlTable("account_selections", {
   applicationId: int("applicationId").notNull().unique(),
   customerType: mysqlEnum("customerType", ["individual", "joint", "corporate"]).notNull(), // 个人/联名/机构
   accountType: mysqlEnum("accountType", ["cash", "margin", "derivatives"]).notNull(), // 现金/保证金/衍生品
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+/**
+ * Case 2: 机构基本信息
+ */
+export const corporateBasicInfo = mysqlTable("corporate_basic_info", {
+  id: int("id").autoincrement().primaryKey(),
+  applicationId: int("applicationId").notNull().unique(),
+  companyEnglishName: varchar("companyEnglishName", { length: 255 }).notNull(),
+  companyChineseName: varchar("companyChineseName", { length: 255 }),
+  natureOfEntity: varchar("natureOfEntity", { length: 100 }).notNull(),
+  natureOfBusiness: varchar("natureOfBusiness", { length: 100 }).notNull(),
+  countryOfIncorporation: varchar("countryOfIncorporation", { length: 100 }).notNull(),
+  dateOfIncorporation: varchar("dateOfIncorporation", { length: 10 }).notNull(), // YYYY-MM-DD
+  certificateOfIncorporationNo: varchar("certificateOfIncorporationNo", { length: 100 }).notNull(),
+  businessRegistrationNo: varchar("businessRegistrationNo", { length: 100 }),
+  registeredAddress: text("registeredAddress").notNull(),
+  businessAddress: text("businessAddress").notNull(),
+  officeNo: varchar("officeNo", { length: 50 }).notNull(),
+  facsimileNo: varchar("facsimileNo", { length: 50 }),
+  contactName: varchar("contactName", { length: 100 }).notNull(),
+  contactTitle: varchar("contactTitle", { length: 100 }).notNull(),
+  contactPhone: varchar("contactPhone", { length: 50 }).notNull(),
+  contactEmail: varchar("contactEmail", { length: 320 }).notNull(),
+  contactEmailVerified: boolean("contactEmailVerified").default(false).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -355,6 +382,7 @@ export type PersonalDetailedInfo = typeof personalDetailedInfo.$inferSelect;
 export type OccupationInfo = typeof occupationInfo.$inferSelect;
 export type EmploymentDetails = typeof employmentDetails.$inferSelect;
 export type FinancialAndInvestment = typeof financialAndInvestment.$inferSelect;
+export type CorporateBasicInfo = typeof corporateBasicInfo.$inferSelect;
 export type BankAccount = typeof bankAccounts.$inferSelect;
 export type TaxInfo = typeof taxInfo.$inferSelect;
 export type UploadedDocument = typeof uploadedDocuments.$inferSelect;
@@ -368,3 +396,37 @@ export type RiskQuestionnaire = typeof riskQuestionnaires.$inferSelect;
 export type InsertRiskQuestionnaire = typeof riskQuestionnaires.$inferInsert;
 export type CustomerDeclaration = typeof customerDeclarations.$inferSelect;
 export type InsertCustomerDeclaration = typeof customerDeclarations.$inferInsert;
+
+/**
+ * Case 3 (Corporate): 机构财务信息
+ */
+export const corporateFinancialInfo = mysqlTable("corporate_financial_info", {
+  id: int("id").autoincrement().primaryKey(),
+  applicationId: int("applicationId").notNull().unique(),
+  authorizedShareCapital: text("authorizedShareCapital").notNull(),
+  issuedShareCapital: text("issuedShareCapital").notNull(),
+  initialSourceOfWealth: text("initialSourceOfWealth").notNull(), // JSON array
+  netAssetValue: varchar("netAssetValue", { length: 100 }).notNull(),
+  netAssetAuditDate: varchar("netAssetAuditDate", { length: 20 }),
+  profitAfterTax: varchar("profitAfterTax", { length: 100 }).notNull(),
+  profitAuditDate: varchar("profitAuditDate", { length: 20 }),
+  assetItems: text("assetItems").notNull(), // JSON array
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+/**
+ * Case 4 (Corporate): 机构关联方
+ */
+export const corporateRelatedParties = mysqlTable("corporate_related_parties", {
+  id: int("id").autoincrement().primaryKey(),
+  applicationId: int("applicationId").notNull().unique(),
+  relatedParties: text("relatedParties").notNull(), // JSON array of party objects
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type CorporateFinancialInfo = typeof corporateFinancialInfo.$inferSelect;
+export type InsertCorporateFinancialInfo = typeof corporateFinancialInfo.$inferInsert;
+export type CorporateRelatedParties = typeof corporateRelatedParties.$inferSelect;
+export type InsertCorporateRelatedParties = typeof corporateRelatedParties.$inferInsert;

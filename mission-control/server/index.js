@@ -161,7 +161,7 @@ app.get('/api/events', auth, (req, res) => {
 });
 
 // Start
-app.listen(PORT, '0.0.0.0', () => {
+app.listen(PORT, process.env.BIND_HOST || '0.0.0.0', () => {
   console.log(`✅ Mission Control Server running on port ${PORT}`);
   console.log(`   Health: http://localhost:${PORT}/health`);
   console.log(`   Data dir: ${DATA_DIR}`);

@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
+import CorporateFinancial from "./CorporateFinancial";
 
 const investmentObjectiveOptions = [
   { value: "capital_growth", label: "資本增值 / Capital Growth" },
@@ -37,9 +38,10 @@ const experienceLevels = [
 
 
 export default function FinancialAndInvestment() {
-  const params = useParams<{ id: string }>();
+  const params = useParams<{ id: string; step?: string }>();
   const [, setLocation] = useLocation();
   const applicationId = parseInt(params.id || "0");
+  const stepNum = parseInt(params.step || "7");
   const showReturnToPreview = useReturnToPreview();
 
   const [investmentObjectives, setInvestmentObjectives] = useState<string[]>([]);
@@ -52,11 +54,16 @@ export default function FinancialAndInvestment() {
     { enabled: !!applicationId }
   );
 
+  const { data: accountSelection, isLoading: isSelectionLoading } = trpc.accountSelection.get.useQuery(
+    { applicationId },
+    { enabled: !!applicationId }
+  );
+
   const saveMutation = trpc.financial.save.useMutation({
     onSuccess: (result) => {
       if (result.success && result.data) {
         toast.success("保存成功");
-        setLocation(`/application/${applicationId}/step/8`);
+        setLocation(`/application/${applicationId}/step/${stepNum + 1}`);
       }
     },
     onError: (error) => {
@@ -158,9 +165,9 @@ export default function FinancialAndInvestment() {
     });
   };
 
-  if (isLoadingData) {
+  if (isLoadingData || isSelectionLoading) {
     return (
-      <ApplicationWizard applicationId={applicationId} currentStep={7}
+      <ApplicationWizard applicationId={applicationId} currentStep={stepNum}
       showReturnToPreview={showReturnToPreview}
     >
         <div className="flex justify-center py-12">
@@ -170,10 +177,14 @@ export default function FinancialAndInvestment() {
     );
   }
 
+  if (accountSelection?.customerType === 'corporate') {
+    return <CorporateFinancial applicationId={applicationId} stepNum={stepNum} />;
+  }
+
   return (
     <ApplicationWizard
       applicationId={applicationId}
-      currentStep={7}
+      currentStep={stepNum}
       onNext={handleNext}
       onSave={handleSave}
       isNextLoading={saveMutation.isPending}
@@ -189,13 +200,14 @@ export default function FinancialAndInvestment() {
             </Label>
             <p className="text-sm text-muted-foreground mt-1">請至少選擇一項</p>
           </div>
-          <div className="space-y-3">
+          <div className="space-y-3 bg-slate-50 p-4 rounded-lg border border-slate-200">
             {investmentObjectiveOptions.map((option) => (
-              <div key={option.value} className="flex items-center space-x-2">
+              <div key={option.value} className="flex items-center space-x-3">
                 <Checkbox
                   id={option.value}
                   checked={investmentObjectives.includes(option.value)}
                   onCheckedChange={() => handleObjectiveToggle(option.value)}
+                  className="h-5 w-5 border-2 border-slate-400 data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
                 />
                 <Label htmlFor={option.value} className="cursor-pointer font-normal">
                   {option.label}
@@ -211,20 +223,20 @@ export default function FinancialAndInvestment() {
         {/* 投資經驗 */}
         <div className="space-y-4">
           <div>
-            <Label className="text-base">
+            <Label className="text-base font-semibold text-slate-800">
               投資經驗 / Investment Experience <span className="text-destructive">*</span>
             </Label>
-            <p className="text-sm text-muted-foreground mt-1">請至少填寫一項投資產品的經驗</p>
+            <p className="text-sm text-slate-600 mt-1">請至少填寫一項投資產品的經驗</p>
           </div>
-          <div className="space-y-4">
+          <div className="space-y-4 bg-slate-50 p-4 rounded-lg border border-slate-200">
             {investmentProducts.map((product) => (
               <div key={product.key} className="grid md:grid-cols-[200px_1fr] gap-4 items-center">
-                <Label htmlFor={product.key}>{product.label}</Label>
+                <Label htmlFor={product.key} className="font-medium text-slate-700">{product.label}</Label>
                 <Select
                   value={investmentExperience[product.key] || ""}
                   onValueChange={(v) => handleExperienceChange(product.key, v)}
                 >
-                  <SelectTrigger id={product.key}>
+                  <SelectTrigger id={product.key} className="bg-white border-slate-300">
                     <SelectValue placeholder="請選擇經驗年限" />
                   </SelectTrigger>
                   <SelectContent>

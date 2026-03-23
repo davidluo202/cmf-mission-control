@@ -26,23 +26,10 @@ export default function AccountSelection() {
     onSuccess: (result) => {
       if (result.success) {
         toast.success("保存成功");
-        setLocation(`/application/${applicationId}/step/3`);
+        setLocation(`/application/${applicationId}/step/2`);
       }
     },
     onError: (error) => {
-      toast.error(`保存失敗: ${error.message}`);
-    },
-  });
-
-  // 保存按鈕的mutation（不跳轉）
-  const saveOnlyMutation = trpc.accountSelection.save.useMutation({
-    onSuccess: (result) => {
-      if (result.success) {
-        toast.success("保存成功");
-        // 不跳轉，留在當前頁面
-      }
-    },
-    onError: (error: any) => {
       toast.error(`保存失敗: ${error.message}`);
     },
   });
@@ -54,16 +41,7 @@ export default function AccountSelection() {
     }
   }, [existingData]);
 
-  const handleSave = () => {
-    saveOnlyMutation.mutate({
-      applicationId,
-      customerType,
-      accountType,
-    });
-  
-  };
-
-  const handleNext = () => {
+const handleNext = () => {
     saveMutation.mutate({
       applicationId,
       customerType,
@@ -73,9 +51,12 @@ export default function AccountSelection() {
 
   if (isLoadingData) {
     return (
-      <ApplicationWizard applicationId={applicationId} currentStep={1}
-      showReturnToPreview={showReturnToPreview}
-    >
+      <ApplicationWizard 
+        applicationId={applicationId} 
+        currentStep={1}
+        showReturnToPreview={showReturnToPreview}
+        customerTypeOverride={customerType}
+      >
         <div className="flex justify-center py-12">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
@@ -88,12 +69,10 @@ export default function AccountSelection() {
       applicationId={applicationId}
       currentStep={1}
       onNext={handleNext}
-      onSave={handleSave}
       isNextLoading={saveMutation.isPending}
-      isSaveLoading={saveOnlyMutation.isPending}
       hidePrevious
-    
       showReturnToPreview={showReturnToPreview}
+      customerTypeOverride={customerType}
     >
       <div className="space-y-8">
         {/* Case 1: 客戶類型 */}
@@ -124,12 +103,12 @@ export default function AccountSelection() {
               </Label>
             </div>
 
-            <div className="flex items-center space-x-2 p-4 border rounded-lg opacity-50 cursor-not-allowed">
-              <RadioGroupItem value="corporate" id="corporate" disabled />
-              <Label htmlFor="corporate" className="flex-1">
+            <div className="flex items-center space-x-2 p-4 border rounded-lg hover:bg-slate-50 cursor-pointer">
+              <RadioGroupItem value="corporate" id="corporate" />
+              <Label htmlFor="corporate" className="flex-1 cursor-pointer">
                 <div>
                   <div className="font-medium">機構賬戶 / Corporate Account</div>
-                  <div className="text-sm text-muted-foreground">暫不開放（即將推出）</div>
+                  <div className="text-sm text-muted-foreground"></div>
                 </div>
               </Label>
             </div>

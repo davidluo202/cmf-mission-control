@@ -7,6 +7,7 @@ import {
   applicationNumberSequences,
   accountSelections,
   personalBasicInfo,
+  corporateBasicInfo,
   personalDetailedInfo,
   occupationInfo,
   employmentDetails,
@@ -23,6 +24,48 @@ import {
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
+
+export async function syncMissingTables() {
+  const db = await getDb();
+  if (!db) return;
+  try {
+    const { sql } = await import("drizzle-orm");
+    console.log("[Database] Running schema sync for new corporate tables...");
+    
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS \`corporate_financial_info\` (
+        \`id\` int NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        \`applicationId\` int NOT NULL UNIQUE,
+        \`authorizedShareCapital\` text NOT NULL,
+        \`issuedShareCapital\` text NOT NULL,
+        \`initialSourceOfWealth\` text NOT NULL,
+        \`netAssetValue\` varchar(100) NOT NULL,
+        \`netAssetAuditDate\` varchar(20) DEFAULT NULL,
+        \`profitAfterTax\` varchar(100) NOT NULL,
+        \`profitAuditDate\` varchar(20) DEFAULT NULL,
+        \`assetItems\` text NOT NULL,
+        \`createdAt\` timestamp DEFAULT CURRENT_TIMESTAMP NOT NULL,
+        \`updatedAt\` timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP NOT NULL,
+        INDEX \`idx_applicationId\` (\`applicationId\`)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS \`corporate_related_parties\` (
+        \`id\` int NOT NULL AUTO_INCREMENT PRIMARY KEY,
+        \`applicationId\` int NOT NULL UNIQUE,
+        \`relatedParties\` text NOT NULL,
+        \`createdAt\` timestamp DEFAULT CURRENT_TIMESTAMP NOT NULL,
+        \`updatedAt\` timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP NOT NULL,
+        INDEX \`idx_applicationId\` (\`applicationId\`)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+    
+    console.log("[Database] Schema sync completed successfully.");
+  } catch (error) {
+    console.error("[Database] Schema sync failed:", error);
+  }
+}
 
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
@@ -375,6 +418,23 @@ export async function getPersonalBasicInfo(applicationId: number) {
   return result.length > 0 ? result[0] : null;
 }
 
+export async function saveCorporateBasicInfo(applicationId: number, data: any) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  await db.insert(corporateBasicInfo).values({
+    applicationId,
+    ...data
+  }).onDuplicateKeyUpdate({ set: data });
+}
+
+export async function getCorporateBasicInfo(applicationId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.select().from(corporateBasicInfo).where(eq(corporateBasicInfo.applicationId, applicationId)).limit(1);
+  return result.length > 0 ? result[0] : null;
+}
+
 export async function savePersonalDetailedInfo(applicationId: number, data: any) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -545,46 +605,55 @@ export async function getCompleteApplicationData(applicationId: number) {
     application,
     accountSelection,
     basicInfo,
+    corporateBasic,
     detailedInfo,
     occupation,
     employment,
     financial,
+    corporateFinancial,
     bankAccountsList,
     tax,
     riskQuestionnaireData,
     documents,
     face,
-    regulatory
+    regulatory,
+    relatedPartiesData
   ] = await Promise.all([
     getApplicationById(applicationId),
     getAccountSelection(applicationId),
     getPersonalBasicInfo(applicationId),
+    getCorporateBasicInfo(applicationId),
     getPersonalDetailedInfo(applicationId),
     getOccupationInfo(applicationId),
     getEmploymentDetails(applicationId),
     getFinancialAndInvestment(applicationId),
+    getCorporateFinancialInfo(applicationId),
     getBankAccounts(applicationId),
     getTaxInfo(applicationId),
     getRiskQuestionnaire(applicationId),
     getUploadedDocuments(applicationId),
     getFaceVerification(applicationId),
-    getRegulatoryDeclarations(applicationId)
+    getRegulatoryDeclarations(applicationId),
+    getCorporateRelatedParties(applicationId)
   ]);
   
   return {
     application,
     accountSelection,
     basicInfo,
+    corporateBasic,
     detailedInfo,
     occupation,
     employment,
     financial,
+    corporateFinancial,
     bankAccounts: bankAccountsList,
     taxInfo: tax,
     riskQuestionnaire: riskQuestionnaireData,
     uploadedDocuments: documents,
     face,
-    regulatory
+    regulatory,
+    relatedParties: relatedPartiesData
   };
 }
 
@@ -1119,4 +1188,43 @@ export async function getRiskQuestionnaire(applicationId: number) {
     .limit(1);
   
   return result[0] || null;
+}
+
+export async function saveCorporateFinancialInfo(applicationId: number, data: any) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  await db.insert(require("../drizzle/schema").corporateFinancialInfo).values({
+    applicationId,
+    ...data
+  }).onDuplicateKeyUpdate({ set: data });
+}
+
+export async function getCorporateFinancialInfo(applicationId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const { corporateFinancialInfo } = require("../drizzle/schema");
+  const result = await db.select().from(corporateFinancialInfo).where(eq(corporateFinancialInfo.applicationId, applicationId)).limit(1);
+  return result.length > 0 ? result[0] : null;
+}
+
+export async function saveCorporateRelatedParties(applicationId: number, data: any) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  await db.insert(require("../drizzle/schema").corporateRelatedParties).values({
+    applicationId,
+    relatedParties: JSON.stringify(data.relatedParties)
+  }).onDuplicateKeyUpdate({ set: { relatedParties: JSON.stringify(data.relatedParties) } });
+}
+
+export async function getCorporateRelatedParties(applicationId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const { corporateRelatedParties } = require("../drizzle/schema");
+  const result = await db.select().from(corporateRelatedParties).where(eq(corporateRelatedParties.applicationId, applicationId)).limit(1);
+  // Return just the related parties array, not the whole object
+  if (result.length === 0) return [];
+  const data = result[0];
+  return JSON.parse(data.relatedParties || '[]');
 }

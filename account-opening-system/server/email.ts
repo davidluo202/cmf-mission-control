@@ -1,14 +1,15 @@
-import sgMail from '@sendgrid/mail';
+import { Resend } from 'resend';
 
-// 初始化SendGrid
-const apiKey = process.env.SENDGRID_API_KEY;
-const senderEmail = process.env.SENDGRID_SENDER_EMAIL || 'noreply@cmfinancial.com';
+// 初始化Resend
+const apiKey = process.env.RESEND_API_KEY || process.env.SENDGRID_API_KEY;
+const senderEmail = process.env.RESEND_SENDER_EMAIL || process.env.SENDGRID_SENDER_EMAIL || 'quote@cmf-otc.com';
+
+const resend = apiKey ? new Resend(apiKey) : null;
 
 if (!apiKey) {
-  console.warn('SENDGRID_API_KEY is not set');
+  console.warn('RESEND_API_KEY is not set');
 } else {
-  sgMail.setApiKey(apiKey);
-  console.log(`SendGrid initialized with sender: ${senderEmail}`);
+  console.log(`Resend initialized with sender: ${senderEmail}`);
 }
 
 /**
@@ -18,15 +19,15 @@ if (!apiKey) {
  * @returns Promise<boolean> 发送成功返回true，失败返回false
  */
 export async function sendVerificationCode(to: string, code: string): Promise<boolean> {
-  if (!apiKey) {
-    throw new Error('SendGrid API密钥未配置');
+  if (!resend || !apiKey) {
+    throw new Error('Resend API密钥未配置');
   }
 
   try {
-    const msg = {
+    const { data, error } = await resend.emails.send({
+      from: senderEmail,
       to,
-      from: senderEmail, // 使用配置的发件人邮箱
-      subject: '誠港金融 - 郵箱驗證碼',
+      subject: "誠港金融 - 郵箱驗證碼",
       text: `您的驗證碼是：${code}，有效期為5分鐘。請勿將此驗證碼告訴他人。`,
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
@@ -42,16 +43,17 @@ export async function sendVerificationCode(to: string, code: string): Promise<bo
           <p style="color: #6b7280; font-size: 12px;">此郵件由系統自動發送，請勿回覆。</p>
         </div>
       `,
-    };
+    });
 
-    await sgMail.send(msg);
-    console.log(`Verification code sent to ${to}`);
+    if (error) {
+      console.error('Resend error:', error);
+      return false;
+    }
+
+    console.log(`Verification code sent to ${to}, id: ${data?.id}`);
     return true;
   } catch (error: any) {
-    console.error('SendGrid error:', error);
-    if (error.response) {
-      console.error('SendGrid response:', error.response.body);
-    }
+    console.error('Resend error:', error);
     return false;
   }
 }
@@ -62,6 +64,33 @@ export async function sendVerificationCode(to: string, code: string): Promise<bo
  */
 export function generateVerificationCode(): string {
   return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+// Helper function to send email via Resend
+async function sendViaResend(to: string, subject: string, html: string): Promise<boolean> {
+  if (!resend || !apiKey) {
+    throw new Error('Resend API密钥未配置');
+  }
+
+  try {
+    const { data, error } = await resend.emails.send({
+      from: senderEmail,
+      to,
+      subject,
+      html,
+    });
+
+    if (error) {
+      console.error('Resend error:', error);
+      return false;
+    }
+
+    console.log(`Email sent to ${to}, id: ${data?.id}`);
+    return true;
+  } catch (error: any) {
+    console.error('Resend error:', error);
+    return false;
+  }
 }
 
 /**
@@ -179,7 +208,7 @@ export async function sendCustomerConfirmationEmail(
     console.log(`[Customer Email] PDF URL: ${pdfUrl || 'Not provided'}`);
     
     try {
-      await sgMail.send(msg);
+      await sendViaResend(to, subject, html);
       console.log(`Customer confirmation email sent to ${to} with PDF download link`);
       return true;
     } catch (error: any) {
@@ -274,7 +303,7 @@ export async function sendInternalNotificationEmail(
     console.log(`[Internal Email] Preparing to send email to onboarding@cmfinancial.com`);
     console.log(`[Internal Email] PDF URL: ${pdfUrl || 'Not provided'}`);
     
-    await sgMail.send(msg);
+    await sendViaResend(to, subject, html);
     console.log(`Internal notification email sent to onboarding@cmfinancial.com with PDF download link`);
     return true;
   } catch (error: any) {
@@ -365,7 +394,7 @@ export async function sendApprovalNotificationEmail(
       `,
     };
 
-    await sgMail.send(msg);
+    await sendViaResend(to, subject, html);
     console.log(`Approval notification sent to ${operationEmail} for application ${applicationNumber}`);
     return true;
   } catch (error: any) {
@@ -378,7 +407,7 @@ export async function sendApprovalNotificationEmail(
 }
 
 /**
- * 发送审批拒绝邮件到Customer-services@cmfinancial.com
+ * 发送审批拒绝邮件到onboard@cmfinancial.com
  * @param applicationNumber 申请编号
  * @param customerName 客户姓名
  * @param customerEmail 客户邮箱
@@ -398,7 +427,7 @@ export async function sendRejectionNotificationEmail(
   }
 
   const complianceEmail = 'compliance@cmfinancial.com';
-  const customerServiceEmail = 'Customer-services@cmfinancial.com';
+  const customerServiceEmail = 'onboard@cmfinancial.com';
 
   try {
     const msg = {
@@ -448,7 +477,7 @@ export async function sendRejectionNotificationEmail(
       `,
     };
 
-    await sgMail.send(msg);
+    await sendViaResend(to, subject, html);
     console.log(`Rejection notification sent to ${customerServiceEmail} for application ${applicationNumber}`);
     return true;
   } catch (error: any) {
@@ -461,7 +490,7 @@ export async function sendRejectionNotificationEmail(
 }
 
 /**
- * 发送审批退回邮件到Customer-services@cmfinancial.com
+ * 发送审批退回邮件到onboard@cmfinancial.com
  * @param applicationNumber 申请编号
  * @param customerName 客户姓名
  * @param customerEmail 客户邮箱
@@ -481,7 +510,7 @@ export async function sendReturnNotificationEmail(
   }
 
   const complianceEmail = 'compliance@cmfinancial.com';
-  const customerServiceEmail = 'Customer-services@cmfinancial.com';
+  const customerServiceEmail = 'onboard@cmfinancial.com';
 
   try {
     const msg = {
@@ -531,7 +560,7 @@ export async function sendReturnNotificationEmail(
       `,
     };
 
-    await sgMail.send(msg);
+    await sendViaResend(to, subject, html);
     console.log(`Return notification sent to ${customerServiceEmail} for application ${applicationNumber}`);
     return true;
   } catch (error: any) {
@@ -558,7 +587,7 @@ export async function sendPasswordResetEmail(to: string, resetLink: string): Pro
     const msg = {
       to,
       from: senderEmail,
-      subject: '誠港金融 - 密碼重置請求',
+      subject: "誠港金融 - 密碼重置",
       text: `您好，
 
 我們收到了您的密碼重置請求。請點擊以下鏈接重置您的密碼：
@@ -591,7 +620,7 @@ ${resetLink}
       `,
     };
 
-    await sgMail.send(msg);
+    await sendViaResend(to, subject, html);
     console.log(`Password reset email sent to ${to}`);
     return true;
   } catch (error: any) {
@@ -685,7 +714,7 @@ export async function sendFirstApprovalNotificationEmail(
       `,
     };
 
-    await sgMail.send(msg);
+    await sendViaResend(to, subject, html);
     console.log(`First approval notification sent to ${complianceEmail}`);
     return true;
   } catch (error: any) {
@@ -725,7 +754,7 @@ export async function sendFinalApprovalNotificationEmail(
   }
 
   const operationEmail = 'operation@cmfinancial.com';
-  const customerServiceEmail = 'customer-services@cmfinancial.com';
+  const customerServiceEmail = 'onboard@cmfinancial.com';
 
   const riskMap: Record<string, string> = {
     'low': '低風險',
@@ -803,7 +832,7 @@ export async function sendFinalApprovalNotificationEmail(
       `,
     };
 
-    await sgMail.send(msg);
+    await sendViaResend(to, subject, html);
     console.log(`Final approval notification sent to ${operationEmail}`);
     return true;
   } catch (error: any) {
@@ -811,6 +840,29 @@ export async function sendFinalApprovalNotificationEmail(
     if (error.response) {
       console.error('SendGrid error response:', error.response.body);
     }
+    return false;
+  }
+}
+
+export async function sendEmail({
+  to,
+  subject,
+  html,
+}: {
+  to: string;
+  subject: string;
+  html: string;
+}): Promise<boolean> {
+  if (!resend || !apiKey) {
+    throw new Error('Resend API密钥未配置');
+  }
+
+  try {
+    await sendViaResend(to, subject, html);
+    console.log(`Generic email sent to ${to}`);
+    return true;
+  } catch (error: any) {
+    console.error('Resend error:', error);
     return false;
   }
 }

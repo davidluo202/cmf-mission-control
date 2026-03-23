@@ -1,13 +1,16 @@
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
-import { Route, Switch } from "wouter";
+import { Route, Switch, useParams } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
+import Login from "./pages/Login";
 import Applications from "./pages/Applications";
 import AccountSelection from "./pages/steps/AccountSelection";
 import PersonalBasicInfo from "./pages/steps/PersonalBasicInfo";
+import CorporateBasicInfo from "./pages/steps/CorporateBasicInfo";
+import CorporateRelatedParties from "./pages/steps/CorporateRelatedParties";
 import PersonalDetailedInfo from "./pages/steps/PersonalDetailedInfo";
 import OccupationInfo from "./pages/steps/OccupationInfo";
 import EmploymentDetails from "./pages/steps/EmploymentDetails";
@@ -27,25 +30,85 @@ import ApproverManagement from "./pages/admin/ApproverManagement";
 import UserManagement from "./pages/admin/UserManagement";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
+import { trpc } from "@/lib/trpc";
+import { Loader2 } from "lucide-react";
+
+// 动态路由组件，根据客户类型分发步骤
+function StepRouter() {
+  const { id, step } = useParams<{ id: string; step: string }>();
+  const applicationId = parseInt(id || "0");
+  const stepNum = parseInt(step || "1");
+
+  const { data: accountSelection, isLoading, error: accountSelectionError } = trpc.accountSelection.get.useQuery(
+    { applicationId },
+    { 
+      enabled: !!applicationId,
+      retry: 1,
+    }
+  );
+
+  // Log error for debugging
+  if (accountSelectionError) {
+    console.error("Error fetching account selection in StepRouter:", accountSelectionError);
+  }
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  const customerType = accountSelection?.customerType || 'individual';
+
+  // Step 1 始终是账号选择
+  if (stepNum === 1) return <AccountSelection />;
+
+  if (customerType === 'corporate') {
+    switch (stepNum) {
+      case 2: return <CorporateBasicInfo />;
+      // 暂时重定向到现有组件，后续开发专属组件
+      case 3: return <FinancialAndInvestment />; // 公司财务概况
+      case 4: return <CorporateRelatedParties />; // 关联人士
+      case 5: return <RiskQuestionnaire />;
+      case 6: return <BankAccount />;
+      case 7: return <TaxInfo />;
+      case 8: return <DocumentUpload />;
+      case 9: return <RegulatoryDeclaration />;
+      default: return <NotFound />;
+    }
+  } else {
+    // 个人开户流程 (12步)
+    switch (stepNum) {
+      case 2: return <PersonalBasicInfo />;
+      case 3: return <PersonalDetailedInfo />;
+      case 4: return <OccupationInfo />;
+      case 5: return <EmploymentDetails />;
+      case 6: return <FinancialAndInvestment />;
+      case 7: return <RiskQuestionnaire />;
+      case 8: return <BankAccount />;
+      case 9: return <TaxInfo />;
+      case 10: return <DocumentUpload />;
+      case 11: return <FaceVerification />;
+      case 12: return <RegulatoryDeclaration />;
+      default: return <NotFound />;
+    }
+  }
+}
 
 function Router() {
   return (
     <Switch>
       <Route path={"/"} component={Home} />
+      <Route path={"/login"} component={Login} />
       <Route path={"/applications"} component={Applications} />
-      <Route path={"/application/:id/step/1"} component={AccountSelection} />
-      <Route path={"/application/:id/step/2"} component={AccountSelection} />
-      <Route path={"/application/:id/step/3"} component={PersonalBasicInfo} />
-      <Route path={"/application/:id/step/4"} component={PersonalDetailedInfo} />
-      <Route path={"/application/:id/step/5"} component={OccupationInfo} />
-      <Route path={"/application/:id/step/6"} component={EmploymentDetails} />
-      <Route path={"/application/:id/step/7"} component={FinancialAndInvestment} />
-      <Route path={"/application/:id/step/8"} component={RiskQuestionnaire} />
-      <Route path={"/application/:id/step/9"} component={BankAccount} />
-      <Route path={"/application/:id/step/10"} component={TaxInfo} />
-      <Route path={"/application/:id/step/11"} component={DocumentUpload} />
-      <Route path={"/application/:id/step/12"} component={FaceVerification} />
-      <Route path={"/application/:id/step/13"} component={RegulatoryDeclaration} />
+      
+      {/* 统一的步骤路由 */}
+      <Route path={"/application/:id/step/:step"}>
+        <StepRouter />
+      </Route>
+
       <Route path={"/application/:id/preview"} component={ApplicationPreview} />
       <Route path={"/register/approver"} component={ApproverRegister} />
       <Route path={"/admin"} component={AdminHome} />

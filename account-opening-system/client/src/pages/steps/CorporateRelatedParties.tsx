@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-import { Loader2, Plus, Trash2, Save } from "lucide-react";
+import { Loader2, Plus, Trash2, Save, Edit } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { convertToTraditional } from "@/lib/converter";
 
@@ -42,7 +42,7 @@ const countryCodes = [
 
 const idIssuingCountries = [
   { value: "HK", label: "香港 Hong Kong" },
-  { value: "CN", label: "中國內地 Mainland China" },
+  { value: "CN", label: "中國內地 Chinese Mainland" },
   { value: "MO", label: "澳門 Macau" },
   { value: "TW", label: "台灣 Taiwan" },
   { value: "US", label: "美國 United States" },
@@ -94,6 +94,7 @@ const validatePhone = (phone: string, countryCode: string): boolean => {
 export default function CorporateRelatedParties() {
   const params = useParams<{ id: string; step?: string }>();
   const [, setLocation] = useLocation();
+  const draftStorageKey = `corporateRelatedParties:draft:${params.id || "0"}`;
   const applicationId = parseInt(params.id || "0");
   const stepNum = parseInt(params.step || "4");
   const showReturnToPreview = useReturnToPreview();
@@ -115,14 +116,42 @@ export default function CorporateRelatedParties() {
   );
 
   useEffect(() => {
-    if (existingData && existingData.relatedParties && existingData.relatedParties.length > 0) {
-      setSavedParties(existingData.relatedParties);
+    // existingData may be an array directly (backend returns the array itself)
+    // or an object with a relatedParties property — handle both
+    const parties = Array.isArray(existingData)
+      ? existingData
+      : (existingData as any)?.relatedParties;
+    if (parties && Array.isArray(parties) && parties.length > 0) {
+      setSavedParties(parties as RelatedParty[]);
     }
   }, [existingData]);
 
-  // Initialize with default contact from corporate basic info if no saved parties
+  // Restore draft (unsaved current form) from localStorage so it won't be lost when user navigates back/forward
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(draftStorageKey);
+      if (raw) {
+        const draft = JSON.parse(raw) as RelatedParty;
+        if (draft && typeof draft === "object") {
+          setCurrentParty({ ...defaultParty(), ...draft });
+        }
+      }
+    } catch {
+      // ignore
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [applicationId]);
+
+  // Initialize with default contact from corporate basic info if no saved parties (only when there is no draft)
   useEffect(() => {
     if (!isLoadingData && savedParties.length === 0 && corporateBasicInfo) {
+      // If user already has a draft, don't overwrite it
+      try {
+        const raw = localStorage.getItem(draftStorageKey);
+        if (raw) return;
+      } catch {
+        // ignore
+      }
       // 解析可能包含区号的电话号码
       let contactPhone = corporateBasicInfo.contactPhone || "";
       let countryCode = "+852";
@@ -141,11 +170,37 @@ export default function CorporateRelatedParties() {
         email: corporateBasicInfo.contactEmail || "",
       });
     }
-  }, [isLoadingData, savedParties.length, corporateBasicInfo]);
+  }, [isLoadingData, savedParties.length, corporateBasicInfo, draftStorageKey]);
+
+  // Persist current draft to localStorage (debounced)
+  useEffect(() => {
+    const hasAnyValue = Object.entries(currentParty).some(([k, v]) => {
+      if (k === "id") return false;
+      if (typeof v === "boolean") return v;
+      return String(v || "").trim().length > 0;
+    });
+
+    const t = setTimeout(() => {
+      try {
+        if (!hasAnyValue) {
+          localStorage.removeItem(draftStorageKey);
+        } else {
+          localStorage.setItem(draftStorageKey, JSON.stringify(currentParty));
+        }
+      } catch {
+        // ignore
+      }
+    }, 300);
+
+    return () => clearTimeout(t);
+  }, [currentParty, draftStorageKey]);
+
+  const utils = trpc.useContext();
 
   const saveMutation = trpc.corporateRelatedParties.save.useMutation({
     onSuccess: (result) => {
       if (result.success) {
+        utils.corporateRelatedParties.get.invalidate({ applicationId });
         toast.success("保存成功");
         setLocation(`/application/${applicationId}/step/${stepNum + 1}`);
       }
@@ -153,10 +208,12 @@ export default function CorporateRelatedParties() {
     onError: (error) => toast.error(`保存失敗: ${error.message}`)
   });
 
-  // 靜默自動保存（不跳轉）
-  const autoSaveMutation = trpc.corporateRelatedParties.save.useMutation({
-    onSuccess: () => {},
-    onError: () => {}
+  const saveOnlyMutation = trpc.corporateRelatedParties.save.useMutation({
+    onSuccess: (result) => {
+      // 靜默保存，不提示
+      utils.corporateRelatedParties.get.invalidate({ applicationId });
+    },
+    onError: (error) => toast.error(`自動保存失敗: ${error.message}`)
   });
 
   const validateParty = (party: RelatedParty, forSave: boolean = false) => {
@@ -189,7 +246,7 @@ export default function CorporateRelatedParties() {
     return Object.keys(errs).length === 0;
   };
 
-  // Add current party to the list and auto-save to backend
+  // Add current party to the list
   const handleAddParty = () => {
     // Convert name to Traditional Chinese
     const convertedParty = {
@@ -199,22 +256,36 @@ export default function CorporateRelatedParties() {
     };
     
     if (validateParty(convertedParty, true)) {
-      const newParty = { ...convertedParty, id: crypto.randomUUID() };
-      const updatedParties = [...savedParties, newParty];
-      setSavedParties(updatedParties);
+      const existingIndex = savedParties.findIndex(p => p.id === convertedParty.id);
+      let newList;
+      if (existingIndex >= 0) {
+        newList = [...savedParties];
+        newList[existingIndex] = convertedParty;
+        toast.success("關聯方已更新");
+      } else {
+        newList = [...savedParties, convertedParty];
+        toast.success("關聯方已添加");
+      }
+      setSavedParties(newList);
+      saveOnlyMutation.mutate({ applicationId, relatedParties: newList });
+      // 清除草稿（已成功加入列表並保存）
+      try { localStorage.removeItem(draftStorageKey); } catch {}
       setCurrentParty(defaultParty());
       setErrors({});
-      toast.success("關聯方已添加並自動保存");
-      // 自動保存到後端，防止折返時丟失
-      autoSaveMutation.mutate({ applicationId, relatedParties: updatedParties });
     }
   };
 
-  // Remove party from list and auto-save
+  // Remove party from list
   const removeParty = (id: string) => {
-    const updatedParties = savedParties.filter(p => p.id !== id);
-    setSavedParties(updatedParties);
-    autoSaveMutation.mutate({ applicationId, relatedParties: updatedParties });
+    const newList = savedParties.filter(p => p.id !== id);
+    setSavedParties(newList);
+    saveOnlyMutation.mutate({ applicationId, relatedParties: newList });
+  };
+
+  // Edit party
+  const editParty = (party: RelatedParty) => {
+    setCurrentParty(party);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   // Handle final save
@@ -263,6 +334,15 @@ export default function CorporateRelatedParties() {
     <ApplicationWizard
       applicationId={applicationId}
       currentStep={stepNum}
+      onPrevious={() => {
+        // Ensure draft is persisted before navigating away
+        try {
+          localStorage.setItem(draftStorageKey, JSON.stringify(currentParty));
+        } catch {
+          // ignore
+        }
+        setLocation(`/application/${applicationId}/step/${stepNum - 1}`);
+      }}
       onNext={handleNext}
       onSave={handleSave}
       isNextLoading={saveMutation.isPending}
@@ -287,9 +367,14 @@ export default function CorporateRelatedParties() {
                     {party.relationshipType === 'director' ? '董事' : party.relationshipType === 'shareholder' ? '股東' : party.relationshipType === 'beneficial_owner' ? '最終受益人' : party.relationshipType === 'authorized_signatory' ? '授權簽署人' : '其他'}
                   </p>
                 </div>
-                <Button variant="ghost" size="icon" onClick={() => removeParty(party.id)} className="text-destructive">
-                  <Trash2 className="h-4 w-4" />
-                </Button>
+                <div className="flex items-center gap-1">
+                  <Button variant="ghost" size="icon" onClick={() => editParty(party)} className="text-blue-600 mr-1">
+                    <Edit className="h-4 w-4" />
+                  </Button>
+                  <Button variant="ghost" size="icon" onClick={() => removeParty(party.id)} className="text-destructive">
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
             ))}
           </div>

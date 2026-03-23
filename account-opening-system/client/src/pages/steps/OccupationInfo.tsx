@@ -9,7 +9,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { convertToTraditional } from "@/lib/converter";
+import { industryOptions } from "@/lib/industryOptions";
 
 const employmentStatuses = [
   { value: "employed", label: "受僱 / Employed" },
@@ -18,23 +20,13 @@ const employmentStatuses = [
   { value: "unemployed", label: "無業 / Unemployed" },
 ];
 
-const industries = [
-  "金融服務 / Financial Services",
-  "資訊科技 / IT",
-  "醫療保健 / Healthcare",
-  "教育 / Education",
-  "零售 / Retail",
-  "製造業 / Manufacturing",
-  "房地產 / Real Estate",
-  "法律 / Legal",
-  "會計 / Accounting",
-  "其他 / Other",
-];
+const industries = industryOptions;
 
 export default function OccupationInfo() {
-  const params = useParams<{ id: string }>();
+  const params = useParams<{ id: string; step?: string }>();
   const [, setLocation] = useLocation();
   const applicationId = parseInt(params.id || "0");
+  const stepNum = parseInt(params.step || "5");
   const showReturnToPreview = useReturnToPreview();
 
   const [formData, setFormData] = useState({
@@ -50,6 +42,13 @@ export default function OccupationInfo() {
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  // 獲取客戶類型用於區分機構/個人
+  const { data: accountSelection } = trpc.accountSelection.get.useQuery(
+    { applicationId },
+    { enabled: !!applicationId }
+  );
+  const isCorporate = accountSelection?.customerType === 'corporate';
+
   const { data: existingData, isLoading: isLoadingData } = trpc.occupation.get.useQuery(
     { applicationId },
     { enabled: !!applicationId }
@@ -59,7 +58,7 @@ export default function OccupationInfo() {
     onSuccess: (result) => {
       if (result.success && result.data) {
         toast.success("保存成功");
-        setLocation(`/application/${applicationId}/step/6`);
+        setLocation(`/application/${applicationId}/step/${stepNum + 1}`);
       }
     },
     onError: (error) => {
@@ -103,14 +102,43 @@ export default function OccupationInfo() {
     }
 
     if (needsEmploymentDetails) {
-      if (!formData.companyName?.trim()) newErrors.companyName = "請輸入公司名稱";
-      if (!formData.position?.trim()) newErrors.position = "請輸入職務名稱";
+      const noSpecialChars = /^[A-Za-z0-9\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\s\-\(\)\/\.&]+$/;
+
+      if (!formData.companyName?.trim()) {
+        newErrors.companyName = "請輸入公司名稱";
+      } else if (!noSpecialChars.test(formData.companyName)) {
+        newErrors.companyName = "公司名稱不能包含特殊字符";
+      }
+
+      if (!formData.position?.trim()) {
+        newErrors.position = "請輸入職務名稱";
+      } else if (!noSpecialChars.test(formData.position)) {
+        newErrors.position = "職務名稱不能包含特殊字符";
+      }
+
       const years = parseInt(formData.yearsOfService);
       if (!formData.yearsOfService || isNaN(years) || years <= 0) {
         newErrors.yearsOfService = "請輸入有效的從業年限";
       }
       if (!formData.industry) newErrors.industry = "請選擇行業";
       if (!formData.companyAddress?.trim()) newErrors.companyAddress = "請輸入公司地址";
+
+      // Office phone / fax: digits only (optional)
+      if (formData.officePhone?.trim() && !/^\d+$/.test(formData.officePhone.trim())) {
+        newErrors.officePhone = "辦公電話只能使用阿拉伯數字";
+      }
+      if (formData.officeFaxNo?.trim() && !/^\d+$/.test(formData.officeFaxNo.trim())) {
+        newErrors.officeFaxNo = "辦公傳真號只能使用阿拉伯數字";
+      }
+    }
+
+    // 學生/無業：至少填一項聯繫方式
+    if (formData.employmentStatus === "student" || formData.employmentStatus === "unemployed") {
+      const hasContact = formData.companyAddress?.trim() || formData.officePhone?.trim();
+      if (!hasContact) {
+        newErrors.companyAddress = "學生/無業人士請至少填寫地址或電話";
+        newErrors.officePhone = " ";
+      }
     }
 
     setErrors(newErrors);
@@ -157,7 +185,7 @@ const handleSave = () => {
 
   if (isLoadingData) {
     return (
-      <ApplicationWizard applicationId={applicationId} currentStep={5}
+      <ApplicationWizard applicationId={applicationId} currentStep={stepNum}
       showReturnToPreview={showReturnToPreview}
     >
         <div className="flex justify-center py-12">
@@ -170,7 +198,7 @@ const handleSave = () => {
   return (
     <ApplicationWizard
       applicationId={applicationId}
-      currentStep={5}
+      currentStep={stepNum}
       onNext={handleNext}
       onSave={handleSave}
       isNextLoading={saveMutation.isPending}
@@ -178,6 +206,24 @@ const handleSave = () => {
       showReturnToPreview={showReturnToPreview}
     >
       <div className="space-y-6">
+        {/* 機構開戶：關聯人士提示 */}
+        {isCorporate && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <p className="text-sm text-blue-800">
+              請填寫關聯人士信息。關聯人士包括董事、授權簽署人、最終受益人等。<br/>
+              <span className="text-blue-600">如需添加多位關聯人士，請點擊下方「添加其他關聯人士」按鈕。</span>
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              className="mt-3"
+              onClick={() => toast.info("添加關聯人士功能即將上線")}
+            >
+              + 添加其他關聯人士
+            </Button>
+          </div>
+        )}
+
         {/* 就業狀況 */}
         <div className="space-y-2">
           <Label htmlFor="employmentStatus">
@@ -336,27 +382,31 @@ const handleSave = () => {
               {/* 辦公电话 */}
               <div className="space-y-2">
                 <Label htmlFor="officePhone">
-                  辦公电话 / Office Phone (可选)
+                  辦公電話 / Office Phone (可選)
                 </Label>
                 <Input
                   id="officePhone"
                   value={formData.officePhone}
-                  onChange={(e) => setFormData({ ...formData, officePhone: e.target.value })}
-                  placeholder="请输入辦公电话"
+                  onChange={(e) => setFormData({ ...formData, officePhone: e.target.value.replace(/\D/g, "") })}
+                  placeholder="請輸入辦公電話"
+                  className={errors.officePhone ? "border-destructive" : ""}
                 />
+                {errors.officePhone && <p className="text-sm text-destructive">{errors.officePhone}</p>}
               </div>
 
               {/* 辦公传真 */}
               <div className="space-y-2">
                 <Label htmlFor="officeFaxNo">
-                  辦公传真 / Office Fax (可选)
+                  辦公傳真號 / Office Fax No. (可選)
                 </Label>
                 <Input
                   id="officeFaxNo"
                   value={formData.officeFaxNo}
-                  onChange={(e) => setFormData({ ...formData, officeFaxNo: e.target.value })}
-                  placeholder="请输入辦公传真"
+                  onChange={(e) => setFormData({ ...formData, officeFaxNo: e.target.value.replace(/\D/g, "") })}
+                  placeholder="請輸入辦公傳真號"
+                  className={errors.officeFaxNo ? "border-destructive" : ""}
                 />
+                {errors.officeFaxNo && <p className="text-sm text-destructive">{errors.officeFaxNo}</p>}
               </div>
             </div>
           </div>

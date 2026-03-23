@@ -16,14 +16,31 @@ const documentTypes = [
   { value: "address_proof", label: "住址證明 / Address Proof", required: false },
 ];
 
+// 機構文件類型
+const corporateDocumentTypes = [
+  { value: "ci_doc", label: "公司註冊證書 / Certificate of Incorporation", required: true },
+  { value: "br_doc", label: "商業登記證 / Business Registration Certificate", required: true },
+  { value: "annual_return", label: "周年申報表 / Annual Return", required: false },
+  { value: "board_resolution", label: "董事局議程 / Board Resolution", required: false },
+];
+
 export default function DocumentUpload() {
-  const params = useParams<{ id: string }>();
+  const params = useParams<{ id: string; step?: string }>();
   const [, setLocation] = useLocation();
   const applicationId = parseInt(params.id || "0");
+  const stepNum = parseInt(params.step || "11");
   const showReturnToPreview = useReturnToPreview();
 
   const [uploading, setUploading] = useState<string | null>(null);
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+
+  // 獲取客戶類型
+  const { data: accountSelection } = trpc.accountSelection.get.useQuery(
+    { applicationId },
+    { enabled: !!applicationId }
+  );
+  const isCorporate = accountSelection?.customerType === 'corporate';
+  const currentDocTypes = isCorporate ? corporateDocumentTypes : documentTypes;
 
   const { data: documents, isLoading: isLoadingData, refetch } = trpc.document.list.useQuery(
     { applicationId },
@@ -82,7 +99,7 @@ export default function DocumentUpload() {
   };
 
   const hasRequiredDocuments = () => {
-    const requiredTypes = documentTypes.filter(t => t.required).map(t => t.value);
+    const requiredTypes = currentDocTypes.filter(t => t.required).map(t => t.value);
     return requiredTypes.every(type => getUploadedDocument(type));
   };
 
@@ -91,12 +108,12 @@ const handleNext = () => {
       toast.error("請上傳所有必需的文件");
       return;
     }
-    setLocation(`/application/${applicationId}/step/12`);
+    setLocation(`/application/${applicationId}/step/${stepNum + 1}`);
   };
 
   if (isLoadingData) {
     return (
-      <ApplicationWizard applicationId={applicationId} currentStep={11}
+      <ApplicationWizard applicationId={applicationId} currentStep={stepNum}
       showReturnToPreview={showReturnToPreview}
     >
         <div className="flex justify-center py-12">
@@ -109,7 +126,7 @@ const handleNext = () => {
   return (
     <ApplicationWizard
       applicationId={applicationId}
-      currentStep={11}
+      currentStep={stepNum}
       onNext={handleNext}
       isNextDisabled={!hasRequiredDocuments()}
     
@@ -123,7 +140,7 @@ const handleNext = () => {
         </div>
 
         <div className="space-y-4">
-          {documentTypes.map((docType) => {
+          {currentDocTypes.map((docType) => {
             const uploaded = getUploadedDocument(docType.value);
             const isUploading = uploading === docType.value;
 
@@ -151,6 +168,8 @@ const handleNext = () => {
                       className="hidden"
                       onChange={(e) => {
                         const file = e.target.files?.[0];
+                        // allow re-selecting the same file after a failed upload
+                        e.target.value = "";
                         if (file) {
                           handleFileSelect(docType.value, file);
                         }
