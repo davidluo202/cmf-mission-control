@@ -7,6 +7,7 @@ RUN npm install --omit=dev --no-audit --no-fund
 
 # Copy server code and schema
 COPY server/index.js ./
+COPY server/dashboard.html ./
 WORKDIR /app
 COPY schema.sql ./
 
