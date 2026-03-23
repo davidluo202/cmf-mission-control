@@ -1,0 +1,16 @@
+{
+  "name": "cmf-mission-control-server",
+  "version": "0.2.0",
+  "description": "CMF Mission Control Cloud Server (Express + SQLite, Railway-ready)",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "type": "commonjs",
+  "dependencies": {
+    "better-sqlite3": "^12.8.0",
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "uuid": "^13.0.0"
+  }
+}
