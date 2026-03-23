@@ -102,6 +102,17 @@ function auth(req, res, next) {
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
+// Public: dashboard UI
+app.get('/dashboard', (req, res) => {
+  const dashPath = path.join(__dirname, 'dashboard.html');
+  if (fs.existsSync(dashPath)) {
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(fs.readFileSync(dashPath, 'utf8'));
+  } else {
+    res.status(404).send('Dashboard not found');
+  }
+});
+
 // Public: root landing
 app.get('/', (req, res) => {
   const agentCount = db.prepare('SELECT COUNT(*) as c FROM agent_status').get().c;
@@ -111,6 +122,7 @@ app.get('/', (req, res) => {
     version: '0.2.0',
     status: 'running',
     endpoints: [
+      'GET  /dashboard  (可视化面板)',
       'GET  /health',
       'GET  /api/overview',
       'GET  /api/status/all',

@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CMF Mission Control</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --border: #30363d;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --accent: #58a6ff;
+      --green: #3fb950;
+      --yellow: #d29922;
+      --red: #f85149;
+      --purple: #bc8cff;
+      --orange: #e3b341;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', monospace;
+      font-size: 14px;
+      min-height: 100vh;
+    }
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    header h1 {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--accent);
+      letter-spacing: 0.5px;
+    }
+    header h1 span { color: var(--muted); font-weight: 400; font-size: 13px; margin-left: 8px; }
+    #refresh-info { color: var(--muted); font-size: 12px; }
+    #refresh-info b { color: var(--green); }
+
+    .container { padding: 20px 24px; max-width: 1400px; margin: 0 auto; }
+
+    /* Summary cards */
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      text-align: center;
+    }
+    .stat-card .num { font-size: 32px; font-weight: 700; line-height: 1; }
+    .stat-card .label { font-size: 11px; color: var(--muted); margin-top: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .num.green { color: var(--green); }
+    .num.yellow { color: var(--yellow); }
+    .num.red { color: var(--red); }
+    .num.blue { color: var(--accent); }
+    .num.purple { color: var(--purple); }
+
+    /* Two-column layout */
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+    @media (max-width: 900px) { .grid-2 { grid-template-columns: 1fr; } }
+
+    /* Panels */
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .panel-header {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      font-weight: 600;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .panel-header .badge {
+      background: var(--border);
+      border-radius: 10px;
+      padding: 2px 8px;
+      font-size: 11px;
+      color: var(--muted);
+      font-weight: 400;
+    }
+    .panel-body { padding: 0; }
+
+    /* Agent table */
+    table { width: 100%; border-collapse: collapse; }
+    th {
+      background: #1c2128;
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 8px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    td { padding: 10px 12px; border-bottom: 1px solid #21262d; font-size: 13px; vertical-align: middle; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #1c2128; }
+
+    /* Status badges */
+    .status {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+    .status-working { background: #1f4d2a; color: var(--green); border: 1px solid #2ea04380; }
+    .status-idle { background: #1c2128; color: var(--muted); border: 1px solid var(--border); }
+    .status-blocked { background: #4d1f1f; color: var(--red); border: 1px solid #f8514980; }
+    .status-offline { background: #2a2a2a; color: #666; border: 1px solid #333; }
+    .status-needs_approval { background: #4d3a1f; color: var(--orange); border: 1px solid #e3b34180; }
+
+    /* Priority badges */
+    .priority { display: inline-block; padding: 1px 7px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+    .priority-p0 { background: #4d1f1f; color: var(--red); }
+    .priority-p1 { background: #4d3a1f; color: var(--orange); }
+    .priority-p2 { background: #1f3a4d; color: var(--accent); }
+    .priority-p3 { background: #1c2128; color: var(--muted); }
+
+    /* Severity */
+    .sev { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+    .sev-critical, .sev-error { background: var(--red); }
+    .sev-warning { background: var(--yellow); }
+    .sev-info { background: var(--green); }
+    .sev-debug { background: var(--muted); }
+
+    /* Events list */
+    .event-list { list-style: none; }
+    .event-item {
+      padding: 10px 16px;
+      border-bottom: 1px solid #21262d;
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+    }
+    .event-item:last-child { border-bottom: none; }
+    .event-meta { flex: 0 0 auto; }
+    .event-agent { font-size: 11px; color: var(--accent); font-weight: 600; }
+    .event-time { font-size: 11px; color: var(--muted); }
+    .event-summary { font-size: 13px; flex: 1; }
+    .event-type-tag { font-size: 10px; color: var(--purple); font-weight: 600; text-transform: uppercase; }
+
+    /* Tasks list */
+    .task-item {
+      padding: 10px 16px;
+      border-bottom: 1px solid #21262d;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .task-item:last-child { border-bottom: none; }
+    .task-title { flex: 1; font-size: 13px; }
+    .task-assignee { font-size: 11px; color: var(--muted); }
+    .task-status { font-size: 11px; color: var(--muted); }
+    .status-pending { color: var(--muted); }
+    .status-in_progress { color: var(--green); }
+    .status-blocked { color: var(--red); }
+    .status-done { color: var(--purple); }
+
+    /* Empty state */
+    .empty { padding: 32px; text-align: center; color: var(--muted); font-size: 13px; }
+
+    /* Full-width panel */
+    .panel-full { margin-bottom: 16px; }
+
+    /* Agent progress */
+    .progress-bar { background: var(--border); border-radius: 4px; height: 4px; width: 80px; overflow: hidden; display: inline-block; vertical-align: middle; margin-left: 8px; }
+    .progress-fill { height: 100%; background: var(--accent); border-radius: 4px; transition: width 0.3s; }
+
+    /* Timestamp */
+    .ts { font-size: 11px; color: var(--muted); }
+
+    /* Token bar */
+    .token-bar { background: var(--border); border-radius: 3px; height: 3px; width: 60px; display: inline-block; vertical-align: middle; margin-left: 4px; }
+    .token-fill { height: 100%; background: var(--purple); border-radius: 3px; }
+
+    /* Loading */
+    #loading { position: fixed; top: 0; left: 0; right: 0; height: 2px; background: var(--accent); animation: loading 1s ease-in-out infinite; }
+    @keyframes loading { 0% { opacity: 1; } 50% { opacity: 0.3; } 100% { opacity: 1; } }
+    #loading.hidden { display: none; }
+
+    /* Error banner */
+    #error-banner {
+      background: #4d1f1f;
+      border: 1px solid var(--red);
+      border-radius: 6px;
+      padding: 10px 16px;
+      margin-bottom: 16px;
+      color: var(--red);
+      display: none;
+    }
+  </style>
+</head>
+<body>
+<div id="loading"></div>
+<header>
+  <h1>🛰️ CMF Mission Control <span>Canton Financial AI Team</span></h1>
+  <div id="refresh-info">自动刷新 <b id="countdown">30</b>s | 最后更新: <span id="last-updated">—</span></div>
+</header>
+
+<div class="container">
+  <div id="error-banner">⚠️ 加载数据失败，请检查 API_TOKEN 环境变量或网络连接。</div>
+
+  <!-- Summary Stats -->
+  <div class="summary-grid" id="summary-grid">
+    <div class="stat-card"><div class="num blue" id="s-total">—</div><div class="label">Total Agents</div></div>
+    <div class="stat-card"><div class="num green" id="s-working">—</div><div class="label">Working</div></div>
+    <div class="stat-card"><div class="num yellow" id="s-idle">—</div><div class="label">Idle</div></div>
+    <div class="stat-card"><div class="num red" id="s-blocked">—</div><div class="label">Blocked</div></div>
+    <div class="stat-card"><div class="num purple" id="s-approval">—</div><div class="label">需审批</div></div>
+    <div class="stat-card"><div class="num blue" id="s-tasks">—</div><div class="label">Active Tasks</div></div>
+    <div class="stat-card"><div class="num red" id="s-alerts">—</div><div class="label">Critical Alerts</div></div>
+  </div>
+
+  <!-- Agents + Events -->
+  <div class="grid-2">
+    <div class="panel">
+      <div class="panel-header">🤖 Agent 状态 <span class="badge" id="agent-count">0</span></div>
+      <div class="panel-body">
+        <table>
+          <thead><tr><th>Agent</th><th>状态</th><th>当前任务</th><th>心跳</th></tr></thead>
+          <tbody id="agents-tbody"><tr><td colspan="4" class="empty">加载中…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">📡 最近事件 <span class="badge" id="events-count">0</span></div>
+      <div class="panel-body">
+        <ul class="event-list" id="events-list"><li class="empty">加载中…</li></ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tasks + Decisions -->
+  <div class="grid-2">
+    <div class="panel">
+      <div class="panel-header">📋 活跃任务 <span class="badge" id="tasks-count">0</span></div>
+      <div class="panel-body" id="tasks-body">
+        <div class="empty">加载中…</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">⚖️ 最近决策 <span class="badge" id="decisions-count">0</span></div>
+      <div class="panel-body" id="decisions-body">
+        <div class="empty">加载中…</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Critical Alerts full width -->
+  <div class="panel panel-full" id="alerts-panel" style="display:none">
+    <div class="panel-header">🚨 Critical Alerts <span class="badge" id="alerts-count">0</span></div>
+    <div class="panel-body">
+      <table>
+        <thead><tr><th>时间</th><th>Agent</th><th>摘要</th><th>严重度</th></tr></thead>
+        <tbody id="alerts-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+  const TOKEN = new URLSearchParams(location.search).get('token') || '';
+  const BASE = '';
+
+  function ts(str) {
+    if (!str) return '—';
+    const d = new Date(str);
+    const now = new Date();
+    const diff = Math.floor((now - d) / 1000);
+    if (diff < 60) return diff + 's 前';
+    if (diff < 3600) return Math.floor(diff/60) + 'm 前';
+    if (diff < 86400) return Math.floor(diff/3600) + 'h 前';
+    return d.toLocaleDateString('zh-CN');
+  }
+
+  function statusBadge(s) {
+    const map = {
+      working: '● Working', idle: '○ Idle', blocked: '✕ Blocked',
+      offline: '— Offline', needs_approval: '⚠ 需审批'
+    };
+    return `<span class="status status-${s}">${map[s] || s}</span>`;
+  }
+
+  function priorityBadge(p) {
+    return `<span class="priority priority-${p}">${(p||'p2').toUpperCase()}</span>`;
+  }
+
+  function sevDot(s) {
+    return `<span class="sev sev-${s}"></span>`;
+  }
+
+  async function fetchOverview() {
+    const headers = TOKEN ? { 'x-api-token': TOKEN } : {};
+    const r = await fetch(`${BASE}/api/overview`, { headers });
+    if (!r.ok) throw new Error(r.status);
+    return r.json();
+  }
+
+  function renderAgents(agents) {
+    document.getElementById('agent-count').textContent = agents.length;
+    if (!agents.length) {
+      document.getElementById('agents-tbody').innerHTML = '<tr><td colspan="4" class="empty">暂无 Agent 数据</td></tr>';
+      return;
+    }
+    document.getElementById('agents-tbody').innerHTML = agents.map(a => {
+      const taskDesc = a.current_task_desc ? `<div style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:11px">${a.current_task_desc}</div>` : '—';
+      const name = a.agent_name || a.agent_id;
+      return `<tr>
+        <td><b style="color:var(--accent)">${name}</b><div style="font-size:10px;color:var(--muted)">${a.model_name||''}</div></td>
+        <td>${statusBadge(a.status)}</td>
+        <td>${taskDesc}</td>
+        <td class="ts">${ts(a.last_heartbeat || a.updated_at)}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  function renderEvents(events) {
+    document.getElementById('events-count').textContent = events.length;
+    if (!events.length) {
+      document.getElementById('events-list').innerHTML = '<li class="empty">暂无事件</li>';
+      return;
+    }
+    document.getElementById('events-list').innerHTML = events.slice(0, 15).map(e => `
+      <li class="event-item">
+        <div class="event-meta">
+          <div class="event-agent">${e.agent_id || '—'}</div>
+          <div class="event-time">${ts(e.created_at)}</div>
+          <div class="event-type-tag">${e.event_type||''}</div>
+        </div>
+        <div>
+          <div>${sevDot(e.severity||'info')}<span class="event-summary">${e.summary||''}</span></div>
+        </div>
+      </li>`).join('');
+  }
+
+  function renderTasks(tasks) {
+    document.getElementById('tasks-count').textContent = tasks.length;
+    const el = document.getElementById('tasks-body');
+    if (!tasks.length) { el.innerHTML = '<div class="empty">暂无活跃任务</div>'; return; }
+    el.innerHTML = tasks.slice(0,12).map(t => `
+      <div class="task-item">
+        ${priorityBadge(t.priority)}
+        <div class="task-title">${t.title}</div>
+        <div style="font-size:11px;color:var(--muted)">${t.assigned_to||'—'}</div>
+        <div class="status-${t.status}" style="font-size:11px;font-weight:600">${t.status}</div>
+      </div>`).join('');
+  }
+
+  function renderDecisions(decisions) {
+    document.getElementById('decisions-count').textContent = decisions.length;
+    const el = document.getElementById('decisions-body');
+    if (!decisions.length) { el.innerHTML = '<div class="empty">暂无决策记录</div>'; return; }
+    el.innerHTML = decisions.slice(0,8).map(d => `
+      <div class="task-item">
+        <div class="task-title">
+          <b>${d.title}</b>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px">${d.conclusion||''}</div>
+        </div>
+        <div class="ts">${ts(d.created_at)}</div>
+      </div>`).join('');
+  }
+
+  function renderAlerts(alerts) {
+    document.getElementById('alerts-count').textContent = alerts.length;
+    if (!alerts.length) {
+      document.getElementById('alerts-panel').style.display = 'none';
+      return;
+    }
+    document.getElementById('alerts-panel').style.display = '';
+    document.getElementById('alerts-tbody').innerHTML = alerts.map(a => `
+      <tr>
+        <td class="ts">${ts(a.created_at)}</td>
+        <td style="color:var(--accent)">${a.agent_id||'—'}</td>
+        <td>${a.summary||''}</td>
+        <td>${sevDot(a.severity)}<span style="font-size:11px;color:var(--red)">${a.severity}</span></td>
+      </tr>`).join('');
+  }
+
+  function renderSummary(s, agents) {
+    document.getElementById('s-total').textContent = s.total_agents ?? agents.length;
+    document.getElementById('s-working').textContent = s.working ?? 0;
+    document.getElementById('s-idle').textContent = s.idle ?? 0;
+    document.getElementById('s-blocked').textContent = s.blocked ?? 0;
+    document.getElementById('s-approval').textContent = s.needs_approval ?? 0;
+    document.getElementById('s-tasks').textContent = s.active_tasks ?? 0;
+    document.getElementById('s-alerts').textContent = s.recent_alerts ?? 0;
+  }
+
+  let countdown = 30;
+  let countdownTimer = null;
+
+  async function refresh() {
+    document.getElementById('loading').classList.remove('hidden');
+    document.getElementById('error-banner').style.display = 'none';
+    try {
+      const data = await fetchOverview();
+      renderSummary(data.summary || {}, data.agents || []);
+      renderAgents(data.agents || []);
+      renderEvents(data.recent_events || []);
+      renderTasks(data.active_tasks || []);
+      renderDecisions(data.recent_decisions || []);
+      renderAlerts(data.critical_alerts || []);
+      document.getElementById('last-updated').textContent = new Date().toLocaleTimeString('zh-CN');
+    } catch(e) {
+      document.getElementById('error-banner').style.display = '';
+      console.error('Fetch failed:', e);
+    } finally {
+      document.getElementById('loading').classList.add('hidden');
+    }
+    // Reset countdown
+    countdown = 30;
+  }
+
+  function startCountdown() {
+    if (countdownTimer) clearInterval(countdownTimer);
+    countdownTimer = setInterval(() => {
+      countdown--;
+      document.getElementById('countdown').textContent = countdown;
+      if (countdown <= 0) {
+        countdown = 30;
+        refresh();
+      }
+    }, 1000);
+  }
+
+  refresh();
+  startCountdown();
+</script>
+</body>
+</html>
