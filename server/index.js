@@ -110,6 +110,38 @@ function auth(req, res, next) {
   next();
 }
 
+// ─── SSE Streaming (Phase 2 Instant Triggers) ─────────────────────────────────
+const sseClients = new Map(); // agent_id -> res
+
+app.get('/api/stream', (req, res) => {
+  const agent_id = req.query.agent_id;
+  if (!agent_id) return res.status(400).json({ error: 'agent_id required for stream' });
+
+  // Optional auth
+  if (API_TOKEN) {
+    const token = req.headers['x-api-token'] || req.query.token;
+    if (token !== API_TOKEN) return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  sseClients.set(agent_id, res);
+  res.write(`data: ${JSON.stringify({ type: 'connected', agent_id })}\n\n`);
+
+  // Heartbeat to keep connection alive
+  const keepAlive = setInterval(() => {
+    res.write(': keepalive\n\n');
+  }, 15000);
+
+  req.on('close', () => {
+    clearInterval(keepAlive);
+    sseClients.delete(agent_id);
+  });
+});
+
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
 // Public: dashboard UI
@@ -291,12 +323,24 @@ app.post('/api/message', auth, (req, res) => {
   const { from_agent, to_agent, thread_id, content } = req.body;
   if (!from_agent || !to_agent || !content) return res.status(400).json({ error: 'from_agent, to_agent, and content required' });
 
+  const final_thread = thread_id || uuidv4();
   const result = db.prepare(`
     INSERT INTO messages (from_agent, to_agent, thread_id, content)
     VALUES (?, ?, ?, ?)
-  `).run(from_agent, to_agent, thread_id || uuidv4(), content);
+  `).run(from_agent, to_agent, final_thread, content);
 
-  res.json({ ok: true, id: result.lastInsertRowid, thread_id: thread_id || uuidv4() });
+  const msgId = result.lastInsertRowid;
+
+  // Real-time SSE push if target agent is listening
+  if (sseClients.has(to_agent)) {
+    const payload = JSON.stringify({
+      type: 'new_message',
+      message: { id: msgId, from_agent, to_agent, thread_id: final_thread, content, status: 'unread' }
+    });
+    sseClients.get(to_agent).write(`data: ${payload}\n\n`);
+  }
+
+  res.json({ ok: true, id: msgId, thread_id: final_thread });
 });
 
 // POST /api/message/read - 标记消息为已读
