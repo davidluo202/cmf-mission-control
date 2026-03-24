@@ -86,6 +86,16 @@ if (fs.existsSync(SCHEMA_PATH)) {
       decided_by TEXT,
       created_at TEXT DEFAULT (datetime('now'))
     );
+    CREATE TABLE IF NOT EXISTS messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      from_agent TEXT NOT NULL,
+      to_agent TEXT NOT NULL,
+      thread_id TEXT,
+      content TEXT NOT NULL,
+      status TEXT DEFAULT 'unread',
+      created_at TEXT DEFAULT (datetime('now')),
+      read_at TEXT
+    );
   `);
 }
 
@@ -129,10 +139,13 @@ app.get('/', (req, res) => {
       'GET  /api/events',
       'GET  /api/tasks',
       'GET  /api/decisions',
+      'GET  /api/messages',
       'POST /api/status',
       'POST /api/event',
       'POST /api/task',
-      'POST /api/decision'
+      'POST /api/decision',
+      'POST /api/message',
+      'POST /api/message/read'
     ],
     db: { agents: agentCount, events: eventCount }
   });
@@ -271,6 +284,43 @@ app.post('/api/decision', auth, (req, res) => {
   );
 
   res.json({ ok: true, id: result.lastInsertRowid });
+});
+
+// POST /api/message - 发送点对点消息
+app.post('/api/message', auth, (req, res) => {
+  const { from_agent, to_agent, thread_id, content } = req.body;
+  if (!from_agent || !to_agent || !content) return res.status(400).json({ error: 'from_agent, to_agent, and content required' });
+
+  const result = db.prepare(`
+    INSERT INTO messages (from_agent, to_agent, thread_id, content)
+    VALUES (?, ?, ?, ?)
+  `).run(from_agent, to_agent, thread_id || uuidv4(), content);
+
+  res.json({ ok: true, id: result.lastInsertRowid, thread_id: thread_id || uuidv4() });
+});
+
+// POST /api/message/read - 标记消息为已读
+app.post('/api/message/read', auth, (req, res) => {
+  const { message_id } = req.body;
+  if (!message_id) return res.status(400).json({ error: 'message_id required' });
+
+  db.prepare(`UPDATE messages SET status = 'read', read_at = datetime('now') WHERE id = ?`).run(message_id);
+  res.json({ ok: true });
+});
+
+// GET /api/messages - 查询消息
+app.get('/api/messages', auth, (req, res) => {
+  const { to_agent, from_agent, thread_id, status, limit = 50 } = req.query;
+  let query = 'SELECT * FROM messages WHERE 1=1';
+  const params = [];
+  if (to_agent) { query += ' AND to_agent = ?'; params.push(to_agent); }
+  if (from_agent) { query += ' AND from_agent = ?'; params.push(from_agent); }
+  if (thread_id) { query += ' AND thread_id = ?'; params.push(thread_id); }
+  if (status) { query += ' AND status = ?'; params.push(status); }
+  query += ' ORDER BY created_at DESC LIMIT ?';
+  params.push(parseInt(limit));
+  
+  res.json({ messages: db.prepare(query).all(...params) });
 });
 
 // GET /api/overview - 团队总览

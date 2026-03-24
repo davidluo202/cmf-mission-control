@@ -103,3 +103,16 @@ INSERT OR IGNORE INTO host_info (host_id, hostname, os_name, agents) VALUES
     ('office-macmini', 'Office Mac Mini', 'macOS', '["nova","qual"]'),
     ('home-macmini', 'Home Mac Mini (Bing)', 'macOS', '["davvy","icy"]'),
     ('office-imac', 'Office iMac', 'macOS', '["imax"]');
+
+-- Messages log (Point-to-point agent communication)
+CREATE TABLE IF NOT EXISTS messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    from_agent TEXT NOT NULL,
+    to_agent TEXT NOT NULL,
+    thread_id TEXT,
+    content TEXT NOT NULL,
+    status TEXT CHECK(status IN ('unread','read','processed')) DEFAULT 'unread',
+    created_at TEXT DEFAULT (datetime('now')),
+    read_at TEXT
+);
+
