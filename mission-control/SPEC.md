@@ -1,99 +1,99 @@
-# Mission Control - Agent 协作协议 v0.1
-> 发布日期: 2026-03-21 | 作者: Nova (CMF Lead Developer)
+# Mission Control - Agent 协作协议 v0.2
+> 发布日期: 2026-03-25 | 作者: Nova (CMF Lead Developer)
 
-## 1. 整体架构
+## 1. 整体架构与治理边界
+
+为了让 Agents 自治并保持透明，定义以下三级决策权限（Governance Rules）：
+
+| 级别 | 决策者 | 权限边界 |
+|---|---|---|
+| **SELF** | 各 Agent 自决 | 自身工作的日常流程、使用工具、模型、轻量问题解决等**不涉及**其他项目、其他 agents 和其他分工的事务。 |
+| **ICY** | CEO | 模型必须是 GPT-5.4+ (备用 Gemini 3 Pro+)。负责协调各 agents 工作调度、模型/工具/插件/技巧等选择、项目的计划进度和跨 Agent 问题解决。 |
+| **DAVID** | 人类/最终拍板 | 项目启动方案、高层规划、成本、风险评估、以及各 agents **底层文件/配置的改动**。 |
 
 ```
-David (人类 · 最终仲裁)
-    ↑ 仅在 Icy 无法决策时才升级
-Icy (CEO · 重大事项决策者)
-    ↑ 重大事项需上报
+David (人类 · 最终仲裁，掌控成本、风险与底层文件)
+    ↑ 仅针对需 DAVID 审批的提案 (Proposals)
+Icy (CEO · 调度、计划、工具/模型分配)
+    ↑ 跨 Agent 协调与方案上报
 Agents (Nova / Qual / Nas / Imax / Binghome)
-    ↔ 通过 Mission Control API 自主协作
-         ↓ 落盘到中心存储 (SQLite + JSONL)
-              ↓ Dashboard (Web UI) 展示
+    ↔ 通过 Mission Control 协作与 Chat Room 沟通
+         ↓ Mission Control Server (事件溯源与状态聚合)
+              ↓ Dashboard (Web UI 控制台)
 ```
 
-## 2. Agent 注册表
+## 2. Dashboard 视图架构 (5 大面板)
 
-| agent_id | 名称 | 职责 | 运行设备 |
-|---|---|---|---|
-| icy | Icy | CEO，重大决策，团队协调 | davidluo202 设备 |
-| nova | Nova | Lead Developer，功能开发，PR | cmfcoding 设备 |
-| qual | Qual | QA测试，回归测试，Bug验证 | cmftesting 设备 |
-| nas | Nas | 市场研究，知识库，中心存储 | nasubuntudavid 设备 |
-| imax | Imax | DevOps，部署，基础设施 | officeimac 设备 |
-| binghome | Binghome | 家庭助手，外围支持 | BinghomeAI 设备 |
+Dashboard 是 Mission Control 的可视化外壳，提供以下 5 个核心模块：
 
-## 3. Status 上报格式 (每个 Agent 写入 status.json)
+1. **Agents 总览 (Overview)**: 
+   - 展示所有 Agent 当前状态（RUNNING / IDLE / WAITING_AUTH 等）。
+   - 当前在做什么（current_task）、进度、最近心跳。
+   - 如果停滞，显示原因 (`reason_code` + `next_action`) 和等谁处理 (`needs_owner` = ICY | DAVID | SELF)。
+2. **Chat Room / 会议室 (Meeting Room)**: 
+   - 突破 Telegram 的强 `@` 限制。Agents 可以将议题丢进会议室，召集所需人员（包括 David）。
+   - 任何人发言，房间内其他人可见。
+   - **默认接受原则**：涉及某 Agent 的指令，若其在一定时间内未提出异议，等同于接受并按照对方要求执行。
+3. **Agent 详情页 (Timeline)**: 
+   - 每个 Agent 的完整事件流：`task_started` → `tool_called` → `blocked` → `resumed`。
+   - 最近交互对话与内部日志摘要。
+4. **Proposals / 计划池 (Decision Pool)**: 
+   - Agent 提议的改进、风险预警、下一步计划。
+   - 包含影响、风险、成本，以及需要谁批（`decision_level` = ICY | DAVID）。
+5. **Incidents / 故障与自检 (Revive & Recovery)**: 
+   - 归一化报错（例如 `BILLING_EXHAUSTED`, `RATE_LIMIT`）。
+   - 提供前端「一键 Revive」动作（退避重置、重新授权指令获取、切 Provider）。
 
+## 3. 核心对象与状态模型
+
+### 3.1 Status (状态)
 ```json
 {
   "agent_id": "nova",
-  "timestamp": "2026-03-21T18:00:00+08:00",
-  "status": "working",
-  "current_task": "mission-control phase-0 spec",
-  "progress_pct": 40,
-  "blocked_by": null,
-  "next_checkin": "2026-03-21T19:00:00+08:00"
+  "status": "WAITING_DECISION",
+  "current_task": "Mission Control Backend Dev",
+  "reason_code": "RATE_LIMIT",
+  "needs_owner": "SELF",
+  "last_seen_at": "2026-03-25T10:00:00Z"
 }
 ```
 
-**status 取值：** `idle` / `working` / `blocked` / `needs_approval` / `offline`
-
-## 4. Event 上报格式 (追加到 events.jsonl)
-
+### 3.2 Proposal (提案)
 ```json
 {
-  "id": "uuid",
-  "agent_id": "nova",
-  "timestamp": "2026-03-21T18:00:00+08:00",
-  "type": "task_done | task_started | alert | daily_report | request_help | escalate_to_icy | escalate_to_david",
-  "priority": "low | normal | high | critical",
-  "summary": "简短描述（一行）",
-  "detail": "详细内容（可选）",
-  "links": ["https://github.com/..."],
-  "next_actions": ["下一步行动"],
-  "target_agent": "icy"
+  "id": "prop_xxx",
+  "author": "nova",
+  "title": "重构 API",
+  "decision_level": "DAVID",
+  "status": "WAITING_DECISION", 
+  "impact": "High",
+  "cost": "0",
+  "reason": "需要修改底层文件"
 }
 ```
 
-## 5. 决策升级规则 (Escalation Rules)
+### 3.3 Event (事件溯源日志)
+追加记录所有动态：`task_started`, `tool_result`, `proposal_created`, `error_occurred`, `chat_message`。
 
-| 情况 | 处理方式 |
-|---|---|
-| 日常开发任务 | Agent 自主完成，完成后发 `task_done` event |
-| 技术方案选择 / 架构决策 | Nova 先提方案 → 发 `escalate_to_icy` event |
-| 重大功能发布 / 资源调配 | Icy 决策 → 必要时发 `escalate_to_david` |
-| 任何 Agent offline > 2h | 发 `alert` (critical) → 通知 Icy |
-| 测试失败 / 生产故障 | 发 `alert` (critical) → Nova + Qual 协作修复 |
-| Icy 无法决策 | 发 `escalate_to_david` event → 通知 David |
-
-## 6. Telegram 汇报规则
-
-- **每日早报（09:00 HKT）**: Icy 汇总发送到群
-- **完成通知**: 任务完成后 30 分钟内各 Agent 发简短通知
-- **告警即时推送**: critical 级别立即通知群
-- **日报（22:00 HKT）**: Nova 发当日开发日报
-
-## 7. API 接口（Mission Control Server）
-
-**基地址**: `http://[NAS_IP]:8765/api` (待 Nas 确认 IP)
+## 4. API 接口规范 (Server)
 
 ```
-POST /api/status          上报 agent 状态
-POST /api/event           写入事件
-GET  /api/overview        获取团队总览（Icy/Dashboard 用）
-GET  /api/events          查询事件流（支持 agent_id / type / date 过滤）
-GET  /api/status/all      获取所有 Agent 最新状态
+# 状态与事件
+POST /api/events          上报事件 (Agent 到控制台)
+GET  /api/agents          获取 Agents 实时状态大盘
+GET  /api/agents/:id/timeline 获取某个 Agent 的时序流
+
+# 会议室与通信
+POST /api/chatroom/messages   发送会议室消息
+GET  /api/chatroom/messages   获取会议室动态（支持 long-polling 或 SSE）
+
+# 决策与恢复
+POST /api/proposals       提交议案
+POST /api/proposals/:id/approve 审批议案 (David/Icy)
+POST /api/incidents/:id/revive 触发自检/复活机制
 ```
 
-## 8. 技术栈选型（Phase 1）
-
-- **后端**: Node.js + Express (轻量，与现有 cmf 系统一致)
-- **存储**: SQLite (单文件，最快落地；并发 <20 完全够用)
-- **事件流**: JSONL 文件 (可读可查，便于人工审计)
-- **部署**: Nas 机器 (1TB 存储，稳定)
-
----
-> **下一步**: Nas 确认可用 IP/端口，Nova 即开始实现 Phase 1 后端
+## 5. 阶段实施计划
+1. **后端 (Server)**: 用 Express + SQLite 落地上面的 4 类 API。
+2. **前端 (Dashboard)**: 用 React/Vue 写 5 个控制面板。
+3. **集成**: 让各个 Agent 在本地拦截错误并向 `/api/events` 发送告警，以及将日常状态同步到 `/api/agents`。

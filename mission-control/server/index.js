@@ -1,8 +1,8 @@
 /**
  * Mission Control Server - Canton Financial AI Team
- * Phase 1: REST API + SQLite
+ * Phase 2: REST API + SQLite (Agent States, ChatRoom, Proposals, Incidents)
  * Author: Nova (CMF Lead Developer)
- * Version: 0.1.0 | 2026-03-21
+ * Version: 0.2.0 | 2026-03-25
  */
 
 const express = require('express');
@@ -17,13 +17,13 @@ const PORT = process.env.PORT || 8765;
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const API_TOKEN = process.env.API_TOKEN || 'cmf-mc-token-2026';
 
-// Setup
 app.use(cors());
 app.use(express.json());
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
-// Database
 const db = new Database(path.join(DATA_DIR, 'mission_control.db'));
+
+// Database Schema v0.2
 db.exec(`
   CREATE TABLE IF NOT EXISTS agent_status (
     agent_id TEXT PRIMARY KEY,
@@ -31,10 +31,11 @@ db.exec(`
     status TEXT,
     current_task TEXT,
     progress_pct INTEGER,
-    blocked_by TEXT,
-    next_checkin TEXT,
+    reason_code TEXT,
+    needs_owner TEXT,
     updated_at TEXT DEFAULT (datetime('now'))
   );
+  
   CREATE TABLE IF NOT EXISTS events (
     id TEXT PRIMARY KEY,
     agent_id TEXT,
@@ -47,9 +48,39 @@ db.exec(`
     next_actions TEXT,
     target_agent TEXT
   );
-  CREATE INDEX IF NOT EXISTS idx_events_agent ON events(agent_id);
-  CREATE INDEX IF NOT EXISTS idx_events_type ON events(type);
-  CREATE INDEX IF NOT EXISTS idx_events_priority ON events(priority);
+
+  CREATE TABLE IF NOT EXISTS chat_messages (
+    id TEXT PRIMARY KEY,
+    sender TEXT,
+    timestamp TEXT,
+    content TEXT,
+    mentions TEXT,
+    topic TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS proposals (
+    id TEXT PRIMARY KEY,
+    author TEXT,
+    timestamp TEXT,
+    title TEXT,
+    decision_level TEXT,
+    status TEXT,
+    impact TEXT,
+    cost TEXT,
+    reason TEXT,
+    updated_at TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS incidents (
+    id TEXT PRIMARY KEY,
+    agent_id TEXT,
+    timestamp TEXT,
+    reason_code TEXT,
+    human_message TEXT,
+    next_action TEXT,
+    status TEXT,
+    updated_at TEXT DEFAULT (datetime('now'))
+  );
 `);
 
 // Auth middleware
@@ -59,132 +90,125 @@ function auth(req, res, next) {
   next();
 }
 
-// === Routes ===
-
-// Root (no auth) - friendly landing
 app.get('/', (req, res) => {
-  const agents = db.prepare('SELECT COUNT(*) as count FROM agent_status').get();
-  const events = db.prepare('SELECT COUNT(*) as count FROM events').get();
   res.json({
     service: 'CMF Mission Control Server',
     version: '0.2.0',
-    status: 'running',
-    endpoints: [
-      'GET  /health',
-      'GET  /api/overview',
-      'GET  /api/status/all',
-      'GET  /api/events',
-      'POST /api/status',
-      'POST /api/event'
-    ],
-    db: { agents: agents.count, events: events.count }
+    status: 'running'
   });
 });
 
-// Health check (no auth)
-app.get('/health', (req, res) => {
-  const agents = db.prepare('SELECT COUNT(*) as count FROM agent_status').get();
-  const events = db.prepare('SELECT COUNT(*) as count FROM events').get();
-  res.json({ status: 'ok', service: 'mission-control', version: '0.2.0', db: { agents: agents.count, events: events.count } });
+// GET /api/agents (Agent 总览)
+app.get('/api/agents', auth, (req, res) => {
+  const agents = db.prepare('SELECT * FROM agent_status ORDER BY updated_at DESC').all();
+  res.json({ agents });
 });
 
-// POST /api/status - Agent 上报状态
-app.post('/api/status', auth, (req, res) => {
-  const { agent_id, timestamp, status, current_task, progress_pct, blocked_by, next_checkin } = req.body;
+// POST /api/agents (Agent 状态更新)
+app.post('/api/agents', auth, (req, res) => {
+  const { agent_id, status, current_task, progress_pct, reason_code, needs_owner } = req.body;
   if (!agent_id || !status) return res.status(400).json({ error: 'agent_id and status required' });
 
-  const validStatuses = ['idle', 'working', 'blocked', 'needs_approval', 'offline'];
-  if (!validStatuses.includes(status)) return res.status(400).json({ error: 'Invalid status' });
-
   db.prepare(`
-    INSERT OR REPLACE INTO agent_status (agent_id, timestamp, status, current_task, progress_pct, blocked_by, next_checkin, updated_at)
+    INSERT OR REPLACE INTO agent_status (agent_id, timestamp, status, current_task, progress_pct, reason_code, needs_owner, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
-  `).run(agent_id, timestamp || new Date().toISOString(), status, current_task, progress_pct || 0, blocked_by, next_checkin);
+  `).run(agent_id, new Date().toISOString(), status, current_task, progress_pct || 0, reason_code || null, needs_owner || null);
 
   res.json({ ok: true });
 });
 
-// POST /api/event - 写入事件
-app.post('/api/event', auth, (req, res) => {
-  const { agent_id, timestamp, type, priority, summary, detail, links, next_actions, target_agent } = req.body;
-  if (!agent_id || !type || !summary) return res.status(400).json({ error: 'agent_id, type, summary required' });
-
+// POST /api/events (事件上报)
+app.post('/api/events', auth, (req, res) => {
+  const { agent_id, type, priority, summary, detail, links, next_actions, target_agent } = req.body;
   const id = uuidv4();
   db.prepare(`
     INSERT INTO events (id, agent_id, timestamp, type, priority, summary, detail, links, next_actions, target_agent)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
-    id, agent_id,
-    timestamp || new Date().toISOString(),
-    type, priority || 'normal', summary,
-    detail || null,
+    id, agent_id, new Date().toISOString(),
+    type, priority || 'normal', summary, detail || null,
     links ? JSON.stringify(links) : null,
     next_actions ? JSON.stringify(next_actions) : null,
     target_agent || null
   );
-
-  // Also append to JSONL file for human-readable audit
-  const jsonlPath = path.join(DATA_DIR, 'events.jsonl');
-  fs.appendFileSync(jsonlPath, JSON.stringify({ id, agent_id, timestamp, type, priority, summary }) + '\n');
-
   res.json({ ok: true, id });
 });
 
-// GET /api/status/all - 获取所有 Agent 最新状态
-app.get('/api/status/all', auth, (req, res) => {
-  const rows = db.prepare('SELECT * FROM agent_status ORDER BY updated_at DESC').all();
-  res.json({ agents: rows });
+// GET /api/agents/:id/timeline (特定 Agent 事件流)
+app.get('/api/agents/:id/timeline', auth, (req, res) => {
+  const rows = db.prepare('SELECT * FROM events WHERE agent_id = ? ORDER BY timestamp DESC LIMIT 50').all(req.params.id);
+  res.json({ events: rows });
 });
 
-// GET /api/overview - 团队总览
-app.get('/api/overview', auth, (req, res) => {
-  const agents = db.prepare('SELECT * FROM agent_status ORDER BY updated_at DESC').all();
-  const recentEvents = db.prepare(
-    "SELECT * FROM events ORDER BY timestamp DESC LIMIT 20"
-  ).all();
-  const criticalAlerts = db.prepare(
-    "SELECT * FROM events WHERE priority='critical' ORDER BY timestamp DESC LIMIT 10"
-  ).all();
-  const todayDone = db.prepare(
-    "SELECT COUNT(*) as count FROM events WHERE type='task_done' AND date(timestamp) = date('now')"
-  ).get();
-  const escalations = db.prepare(
-    "SELECT * FROM events WHERE type LIKE 'escalate%' ORDER BY timestamp DESC LIMIT 5"
-  ).all();
-
-  res.json({
-    summary: {
-      total_agents: agents.length,
-      working: agents.filter(a => a.status === 'working').length,
-      blocked: agents.filter(a => a.status === 'blocked').length,
-      needs_approval: agents.filter(a => a.status === 'needs_approval').length,
-      tasks_done_today: todayDone.count
-    },
-    agents,
-    critical_alerts: criticalAlerts,
-    escalations,
-    recent_events: recentEvents
-  });
+// GET /api/chatroom/messages (会议室拉取)
+app.get('/api/chatroom/messages', auth, (req, res) => {
+  const { limit = 50 } = req.query;
+  const rows = db.prepare('SELECT * FROM chat_messages ORDER BY timestamp DESC LIMIT ?').all(parseInt(limit));
+  res.json({ messages: rows.reverse() });
 });
 
-// GET /api/events - 查询事件流
-app.get('/api/events', auth, (req, res) => {
-  const { agent_id, type, priority, date, limit = 50 } = req.query;
-  let query = 'SELECT * FROM events WHERE 1=1';
-  const params = [];
-  if (agent_id) { query += ' AND agent_id = ?'; params.push(agent_id); }
-  if (type) { query += ' AND type = ?'; params.push(type); }
-  if (priority) { query += ' AND priority = ?'; params.push(priority); }
-  if (date) { query += ' AND date(timestamp) = ?'; params.push(date); }
-  query += ' ORDER BY timestamp DESC LIMIT ?';
-  params.push(parseInt(limit));
-  const rows = db.prepare(query).all(...params);
-  res.json({ events: rows, count: rows.length });
+// POST /api/chatroom/messages (发到会议室)
+app.post('/api/chatroom/messages', auth, (req, res) => {
+  const { sender, content, mentions, topic } = req.body;
+  if (!sender || !content) return res.status(400).json({ error: 'sender and content required' });
+  
+  const id = uuidv4();
+  db.prepare(`
+    INSERT INTO chat_messages (id, sender, timestamp, content, mentions, topic)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(id, sender, new Date().toISOString(), content, mentions ? JSON.stringify(mentions) : null, topic || null);
+  res.json({ ok: true, id });
+});
+
+// POST /api/proposals (提交提案)
+app.post('/api/proposals', auth, (req, res) => {
+  const { author, title, decision_level, impact, cost, reason } = req.body;
+  const id = 'prop_' + uuidv4().substring(0, 8);
+  db.prepare(`
+    INSERT INTO proposals (id, author, timestamp, title, decision_level, status, impact, cost, reason)
+    VALUES (?, ?, ?, ?, ?, 'WAITING_DECISION', ?, ?, ?)
+  `).run(id, author, new Date().toISOString(), title, decision_level, impact || null, cost || null, reason || null);
+  res.json({ ok: true, id });
+});
+
+// GET /api/proposals (获取提案)
+app.get('/api/proposals', auth, (req, res) => {
+  const rows = db.prepare('SELECT * FROM proposals ORDER BY timestamp DESC').all();
+  res.json({ proposals: rows });
+});
+
+// POST /api/proposals/:id/approve (审批)
+app.post('/api/proposals/:id/approve', auth, (req, res) => {
+  const { action, reviewer } = req.body; // action = APPROVED | REJECTED
+  db.prepare(`UPDATE proposals SET status = ?, updated_at = datetime('now') WHERE id = ?`).run(action, req.params.id);
+  res.json({ ok: true });
+});
+
+// GET /api/incidents (获取故障池)
+app.get('/api/incidents', auth, (req, res) => {
+  const rows = db.prepare('SELECT * FROM incidents ORDER BY timestamp DESC').all();
+  res.json({ incidents: rows });
+});
+
+// POST /api/incidents (上报故障)
+app.post('/api/incidents', auth, (req, res) => {
+  const { agent_id, reason_code, human_message, next_action } = req.body;
+  const id = 'inc_' + uuidv4().substring(0, 8);
+  db.prepare(`
+    INSERT INTO incidents (id, agent_id, timestamp, reason_code, human_message, next_action, status)
+    VALUES (?, ?, ?, ?, ?, ?, 'OPEN')
+  `).run(id, agent_id, new Date().toISOString(), reason_code, human_message, next_action);
+  res.json({ ok: true, id });
+});
+
+// POST /api/incidents/:id/revive (复活操作)
+app.post('/api/incidents/:id/revive', auth, (req, res) => {
+  db.prepare(`UPDATE incidents SET status = 'RESOLVED', updated_at = datetime('now') WHERE id = ?`).run(req.params.id);
+  res.json({ ok: true });
 });
 
 // Start
 app.listen(PORT, process.env.BIND_HOST || '0.0.0.0', () => {
-  console.log(`✅ Mission Control Server running on port ${PORT}`);
-  console.log(`   Health: http://localhost:${PORT}/health`);
-  console.log(`   Data dir: ${DATA_DIR}`);
+  console.log(`✅ Mission Control Server v0.2 running on port ${PORT}`);
+  console.log(`   Health: http://localhost:${PORT}/`);
 });
