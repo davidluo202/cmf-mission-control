@@ -23,6 +23,13 @@ if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
 const db = new Database(path.join(DATA_DIR, 'mission_control.db'));
 
+// Schema migration: add client_message_id to existing chat_messages tables
+try {
+  db.exec(`ALTER TABLE chat_messages ADD COLUMN client_message_id TEXT UNIQUE`);
+} catch (e) {
+  // Column already exists — safe to ignore
+}
+
 // Database Schema v0.2
 db.exec(`
   CREATE TABLE IF NOT EXISTS agent_status (
@@ -55,7 +62,8 @@ db.exec(`
     timestamp TEXT,
     content TEXT,
     mentions TEXT,
-    topic TEXT
+    topic TEXT,
+    client_message_id TEXT UNIQUE
   );
 
   CREATE TABLE IF NOT EXISTS proposals (
@@ -149,14 +157,20 @@ app.get('/api/chatroom/messages', auth, (req, res) => {
 
 // POST /api/chatroom/messages (发到会议室)
 app.post('/api/chatroom/messages', auth, (req, res) => {
-  const { sender, content, mentions, topic } = req.body;
+  const { sender, content, mentions, topic, client_message_id } = req.body;
   if (!sender || !content) return res.status(400).json({ error: 'sender and content required' });
-  
+
+  // Idempotency: if client_message_id provided and already exists, return ok without inserting
+  if (client_message_id) {
+    const existing = db.prepare('SELECT id FROM chat_messages WHERE client_message_id = ?').get(client_message_id);
+    if (existing) return res.json({ ok: true, id: existing.id, deduplicated: true });
+  }
+
   const id = uuidv4();
   db.prepare(`
-    INSERT INTO chat_messages (id, sender, timestamp, content, mentions, topic)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(id, sender, new Date().toISOString(), content, mentions ? JSON.stringify(mentions) : null, topic || null);
+    INSERT OR IGNORE INTO chat_messages (id, sender, timestamp, content, mentions, topic, client_message_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(id, sender, new Date().toISOString(), content, mentions ? JSON.stringify(mentions) : null, topic || null, client_message_id || null);
   res.json({ ok: true, id });
 });
 
