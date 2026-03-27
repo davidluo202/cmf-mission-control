@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
 import { LayoutDashboard, MessageSquare, AlertTriangle, FileText, Activity, Menu, X } from 'lucide-react';
 import Dashboard from './pages/Dashboard';
 import ChatRoom from './pages/ChatRoom';
@@ -7,10 +7,8 @@ import AgentDetail from './pages/AgentDetail';
 import Proposals from './pages/Proposals';
 import Incidents from './pages/Incidents';
 
-function App() {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-
-  const closeSidebar = () => setSidebarOpen(false);
+function Sidebar({ sidebarOpen, closeSidebar }: { sidebarOpen: boolean; closeSidebar: () => void }) {
+  const location = useLocation();
 
   const navLinks = [
     { to: '/', icon: <LayoutDashboard className="w-5 h-5 mr-3" />, label: 'Overview' },
@@ -18,6 +16,56 @@ function App() {
     { to: '/proposals', icon: <FileText className="w-5 h-5 mr-3" />, label: 'Proposals' },
     { to: '/incidents', icon: <AlertTriangle className="w-5 h-5 mr-3" />, label: 'Incidents' },
   ];
+
+  const isActive = (to: string) =>
+    to === '/' ? location.pathname === '/' : location.pathname.startsWith(to);
+
+  return (
+    <aside
+      className={`
+        fixed top-0 left-0 h-full w-64 bg-gray-900 text-white flex flex-col z-30
+        transform transition-transform duration-200 ease-in-out
+        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+        lg:relative lg:translate-x-0 lg:z-auto
+      `}
+    >
+      <div className="h-16 flex items-center justify-between px-6 border-b border-gray-800">
+        <div className="flex items-center">
+          <Activity className="w-6 h-6 mr-2 text-blue-400" />
+          <h1 className="text-lg font-bold">Mission Control</h1>
+        </div>
+        <button
+          className="lg:hidden text-gray-400 hover:text-white"
+          onClick={closeSidebar}
+        >
+          <X className="w-5 h-5" />
+        </button>
+      </div>
+      <nav className="flex-1 px-4 py-6 space-y-2">
+        {navLinks.map(link => (
+          <Link
+            key={link.to}
+            to={link.to}
+            onClick={closeSidebar}
+            className={`flex items-center px-4 py-2 rounded-md transition-colors ${
+              isActive(link.to)
+                ? 'bg-blue-600 text-white font-medium'
+                : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+            }`}
+          >
+            {link.icon}
+            {link.label}
+          </Link>
+        ))}
+      </nav>
+    </aside>
+  );
+}
+
+function App() {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  const closeSidebar = () => setSidebarOpen(false);
 
   return (
     <Router>
@@ -31,41 +79,7 @@ function App() {
         )}
 
         {/* Sidebar Drawer */}
-        <aside
-          className={`
-            fixed top-0 left-0 h-full w-64 bg-gray-900 text-white flex flex-col z-30
-            transform transition-transform duration-200 ease-in-out
-            ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
-            lg:relative lg:translate-x-0 lg:z-auto
-          `}
-        >
-          <div className="h-16 flex items-center justify-between px-6 border-b border-gray-800">
-            <div className="flex items-center">
-              <Activity className="w-6 h-6 mr-2 text-blue-400" />
-              <h1 className="text-lg font-bold">Mission Control</h1>
-            </div>
-            {/* Close button (mobile only) */}
-            <button
-              className="lg:hidden text-gray-400 hover:text-white"
-              onClick={closeSidebar}
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-          <nav className="flex-1 px-4 py-6 space-y-2">
-            {navLinks.map(link => (
-              <Link
-                key={link.to}
-                to={link.to}
-                onClick={closeSidebar}
-                className="flex items-center px-4 py-2 text-gray-300 hover:bg-gray-800 rounded-md"
-              >
-                {link.icon}
-                {link.label}
-              </Link>
-            ))}
-          </nav>
-        </aside>
+        <Sidebar sidebarOpen={sidebarOpen} closeSidebar={closeSidebar} />
 
         {/* Main Content */}
         <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
