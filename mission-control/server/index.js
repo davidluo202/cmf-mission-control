@@ -207,6 +207,19 @@ app.post('/api/incidents/:id/revive', auth, (req, res) => {
   res.json({ ok: true });
 });
 
+// Serve frontend static files (client/dist)
+const clientDist = path.join(__dirname, '..', 'client', 'dist');
+if (fs.existsSync(clientDist)) {
+  app.use(express.static(clientDist));
+  // SPA fallback: all non-API routes serve index.html
+  app.get('*', (req, res) => {
+    if (!req.path.startsWith('/api') && !req.path.startsWith('/health')) {
+      res.sendFile(path.join(clientDist, 'index.html'));
+    }
+  });
+  console.log(`   Frontend: serving static files from ${clientDist}`);
+}
+
 // Start
 app.listen(PORT, process.env.BIND_HOST || '0.0.0.0', () => {
   console.log(`✅ Mission Control Server v0.2 running on port ${PORT}`);
