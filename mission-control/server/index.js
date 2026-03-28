@@ -2,7 +2,7 @@
  * Mission Control Server - Canton Financial AI Team
  * Phase 2: REST API + SQLite (Agent States, ChatRoom, Proposals, Incidents)
  * Author: Nova (CMF Lead Developer)
- * Version: 0.3.1 | 2026-03-29
+ * Version: 0.3.2 | 2026-03-29
  */
 
 const express = require('express');
@@ -235,6 +235,50 @@ app.post('/api/agents/:id/heartbeat', auth, (req, res) => {
   db.prepare(`UPDATE agent_status SET updated_at = datetime('now') WHERE agent_id = ?`).run(req.params.id);
   res.json({ ok: true });
 });
+
+// POST /api/admin/seed-defaults — Re-seed default agents if DB is empty (safe to call on restart)
+app.post('/api/admin/seed-defaults', auth, (req, res) => {
+  const count = db.prepare('SELECT COUNT(*) as c FROM agent_status').get().c;
+  if (count > 0) return res.json({ ok: true, seeded: 0, message: 'Agents already exist, skipping seed' });
+
+  const defaults = [
+    { agent_id: 'Nova',  status: 'RUNNING', current_task: 'CMF system development & maintenance',    progress_pct: 75 },
+    { agent_id: 'Qual',  status: 'RUNNING', current_task: 'QA testing for all CMF projects',         progress_pct: 60 },
+    { agent_id: 'Icy',   status: 'RUNNING', current_task: 'Team coordination & project management',  progress_pct: 60 },
+    { agent_id: 'Imax',  status: 'RUNNING', current_task: 'Infrastructure deployment & monitoring',  progress_pct: 60 },
+    { agent_id: 'Nas',   status: 'RUNNING', current_task: 'Research & data support',                 progress_pct: 80 },
+  ];
+  const stmt = db.prepare(`
+    INSERT OR IGNORE INTO agent_status (agent_id, timestamp, status, current_task, progress_pct, updated_at)
+    VALUES (?, ?, ?, ?, ?, datetime('now'))
+  `);
+  for (const a of defaults) {
+    stmt.run(a.agent_id, new Date().toISOString(), a.status, a.current_task, a.progress_pct);
+  }
+  res.json({ ok: true, seeded: defaults.length });
+});
+
+// Auto-seed on startup: ensure agents table is never empty after a cold deploy
+(function autoSeedOnStartup() {
+  const count = db.prepare('SELECT COUNT(*) as c FROM agent_status').get().c;
+  if (count === 0) {
+    const defaults = [
+      { agent_id: 'Nova',  status: 'RUNNING', current_task: 'CMF system development & maintenance',    progress_pct: 75 },
+      { agent_id: 'Qual',  status: 'RUNNING', current_task: 'QA testing for all CMF projects',         progress_pct: 60 },
+      { agent_id: 'Icy',   status: 'RUNNING', current_task: 'Team coordination & project management',  progress_pct: 60 },
+      { agent_id: 'Imax',  status: 'RUNNING', current_task: 'Infrastructure deployment & monitoring',  progress_pct: 60 },
+      { agent_id: 'Nas',   status: 'RUNNING', current_task: 'Research & data support',                 progress_pct: 80 },
+    ];
+    const stmt = db.prepare(`
+      INSERT OR IGNORE INTO agent_status (agent_id, timestamp, status, current_task, progress_pct, updated_at)
+      VALUES (?, ?, ?, ?, ?, datetime('now'))
+    `);
+    for (const a of defaults) {
+      stmt.run(a.agent_id, new Date().toISOString(), a.status, a.current_task, a.progress_pct);
+    }
+    console.log('   Auto-seeded 5 default agents (DB was empty after cold deploy)');
+  }
+})();
 
 // Serve frontend static files (client/dist)
 // Railway: client-dist/ is bundled inside server dir (copied at build time)
