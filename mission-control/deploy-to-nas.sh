@@ -11,11 +11,15 @@ REMOTE_DIR="/opt/mission-control"
 echo "=== 部署 Mission Control 到 Nas ==="
 echo "目标: $SSH_USER@$NAS_IP:$SSH_PORT"
 
-# 1. 上传文件
+# 1. 上传 server 文件
 rsync -avz -e "ssh -p $SSH_PORT" \
   --exclude node_modules \
   --exclude data \
   ./server/ $SSH_USER@$NAS_IP:$REMOTE_DIR/
+
+# 1b. 上传前端 dist（服务器通过 express.static 提供）
+rsync -avz -e "ssh -p $SSH_PORT" \
+  ./client/dist/ $SSH_USER@$NAS_IP:$REMOTE_DIR/../client/dist/
 
 # 2. 远程安装依赖并启动
 ssh -p $SSH_PORT $SSH_USER@$NAS_IP "
