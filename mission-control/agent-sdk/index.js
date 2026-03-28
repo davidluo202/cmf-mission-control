@@ -143,4 +143,50 @@ function propose(title, decision_level, opts = {}) {
   });
 }
 
-module.exports = { init, setStatus, event, incident, chat, propose };
+function _get(path) {
+  return new Promise((resolve, reject) => {
+    const url = new URL(_config.baseUrl + path);
+    const lib = url.protocol === 'https:' ? https : http;
+    const req = lib.request({
+      hostname: url.hostname,
+      port: url.port || (url.protocol === 'https:' ? 443 : 80),
+      path: url.pathname + url.search,
+      method: 'GET',
+      headers: { 'x-api-token': _config.token },
+    }, (res) => {
+      let raw = '';
+      res.on('data', chunk => raw += chunk);
+      res.on('end', () => {
+        try { resolve(JSON.parse(raw)); } catch { resolve(raw); }
+      });
+    });
+    req.on('error', (e) => {
+      if (!_config.silent) console.warn(`[MC] GET ${path} failed: ${e.message}`);
+      resolve(null);
+    });
+    req.setTimeout(5000, () => { req.destroy(); resolve(null); });
+    req.end();
+  });
+}
+
+/**
+ * Fetch recent chat messages
+ * @param {number} limit  Max messages to fetch (default 50)
+ */
+function getMessages(limit = 50) {
+  return _get(`/api/chatroom/messages?limit=${limit}`);
+}
+
+/**
+ * Poll for new messages since a given timestamp (ISO string)
+ * Returns only messages newer than sinceTimestamp
+ * @param {string} sinceTimestamp  ISO timestamp string
+ * @param {number} limit
+ */
+async function pollMessages(sinceTimestamp, limit = 50) {
+  const result = await getMessages(limit);
+  if (!result || !result.messages) return [];
+  return result.messages.filter(m => new Date(m.timestamp) > new Date(sinceTimestamp));
+}
+
+module.exports = { init, setStatus, event, incident, chat, propose, getMessages, pollMessages };
