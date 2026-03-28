@@ -9,6 +9,9 @@ RUN npm ci
 
 COPY index.js .
 
+# Copy pre-built frontend dist
+COPY client-dist/ ./client/dist/
+
 RUN mkdir -p /data
 ENV DATA_DIR=/data
 ENV PORT=8765
