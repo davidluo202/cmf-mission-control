@@ -65,13 +65,8 @@ function Sidebar({ sidebarOpen, closeSidebar }: { sidebarOpen: boolean; closeSid
 
 function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [authed, setAuthed] = useState(() => sessionStorage.getItem('mc_authed') === '1');
-
+  // Auth bypass: login disabled until dashboard is stable
   const closeSidebar = () => setSidebarOpen(false);
-
-  if (!authed) {
-    return <Login onLogin={() => setAuthed(true)} />;
-  }
 
   return (
     <Router>

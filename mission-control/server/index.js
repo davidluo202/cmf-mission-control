@@ -108,14 +108,9 @@ app.get('/health', (req, res) => {
   });
 });
 
-// POST /api/auth/login — Dashboard password verification (backend-validated)
+// POST /api/auth/login — Auth disabled (bypass mode)
 app.post('/api/auth/login', (req, res) => {
-  const { password } = req.body;
-  if (password === DASHBOARD_PASSWORD) {
-    res.json({ ok: true, token: API_TOKEN });
-  } else {
-    res.status(401).json({ ok: false, error: 'Invalid password' });
-  }
+  res.json({ ok: true, token: API_TOKEN });
 });
 
 // GET /api/agents (Agent 总览)
