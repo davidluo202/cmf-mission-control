@@ -2,7 +2,7 @@
  * Mission Control Server - Canton Financial AI Team
  * Phase 2: REST API + SQLite (Agent States, ChatRoom, Proposals, Incidents)
  * Author: Nova (CMF Lead Developer)
- * Version: 0.3.3 | 2026-03-29
+ * Version: 0.4.0 | 2026-03-29
  */
 
 const express = require('express');
@@ -25,11 +25,18 @@ if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
 const db = new Database(path.join(DATA_DIR, 'mission_control.db'));
 
-// Schema migration: add client_message_id to existing chat_messages tables
-try {
-  db.exec(`ALTER TABLE chat_messages ADD COLUMN client_message_id TEXT UNIQUE`);
-} catch (e) {
-  // Column already exists — safe to ignore
+// Schema migrations — each ALTER TABLE is wrapped in try/catch; already-existing columns are silently ignored
+const migrations = [
+  `ALTER TABLE chat_messages ADD COLUMN client_message_id TEXT UNIQUE`,
+  `ALTER TABLE agent_status ADD COLUMN model TEXT`,
+  `ALTER TABLE agent_status ADD COLUMN model_usage TEXT`,
+  `ALTER TABLE agent_status ADD COLUMN last_task TEXT`,
+  `ALTER TABLE agent_status ADD COLUMN last_task_at TEXT`,
+  `ALTER TABLE agent_status ADD COLUMN needs_support_from TEXT`,
+  `ALTER TABLE agent_status ADD COLUMN offline_reason TEXT`,
+];
+for (const sql of migrations) {
+  try { db.exec(sql); } catch (e) { /* column already exists — safe to ignore */ }
 }
 
 // Database Schema v0.2
@@ -121,13 +128,27 @@ app.get('/api/agents', auth, (req, res) => {
 
 // POST /api/agents (Agent 状态更新)
 app.post('/api/agents', auth, (req, res) => {
-  const { agent_id, status, current_task, progress_pct, reason_code, needs_owner } = req.body;
+  const {
+    agent_id, status, current_task, progress_pct, reason_code, needs_owner,
+    model, model_usage, last_task, last_task_at, needs_support_from, offline_reason
+  } = req.body;
   if (!agent_id || !status) return res.status(400).json({ error: 'agent_id and status required' });
 
   db.prepare(`
-    INSERT OR REPLACE INTO agent_status (agent_id, timestamp, status, current_task, progress_pct, reason_code, needs_owner, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
-  `).run(agent_id, new Date().toISOString(), status, current_task, progress_pct || 0, reason_code || null, needs_owner || null);
+    INSERT OR REPLACE INTO agent_status
+      (agent_id, timestamp, status, current_task, progress_pct, reason_code, needs_owner,
+       model, model_usage, last_task, last_task_at, needs_support_from, offline_reason, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+  `).run(
+    agent_id, new Date().toISOString(), status,
+    current_task || null, progress_pct || 0,
+    reason_code || null, needs_owner || null,
+    model || null,
+    model_usage ? JSON.stringify(model_usage) : null,
+    last_task || null, last_task_at || null,
+    needs_support_from || null,
+    offline_reason || null
+  );
 
   res.json({ ok: true });
 });

@@ -62,7 +62,16 @@ function _post(path, body) {
  * @param {string} status  RUNNING | IDLE | WAITING_AUTH | WAITING_DECISION | BLOCKED | ERROR
  * @param {string} task    Human-readable description of current task
  * @param {number} pct     Progress 0-100
- * @param {object} opts    { reason_code, needs_owner }
+ * @param {object} opts    {
+ *   reason_code,        // error/block reason code
+ *   needs_owner,        // which human needs to act
+ *   model,              // current AI model, e.g. "claude-opus-4-6"
+ *   model_usage,        // { tokens_used, quota, pct } — model token usage
+ *   last_task,          // last completed task description
+ *   last_task_at,       // ISO timestamp of last task completion
+ *   needs_support_from, // which agent(s) you need help from, e.g. "Icy,Nova"
+ *   offline_reason,     // human-readable reason if ERROR/OFFLINE
+ * }
  */
 function setStatus(status, task = '', pct = 0, opts = {}) {
   return _post('/api/agents', {
@@ -72,6 +81,12 @@ function setStatus(status, task = '', pct = 0, opts = {}) {
     progress_pct: pct,
     reason_code: opts.reason_code || null,
     needs_owner: opts.needs_owner || null,
+    model: opts.model || null,
+    model_usage: opts.model_usage || null,
+    last_task: opts.last_task || null,
+    last_task_at: opts.last_task_at || null,
+    needs_support_from: opts.needs_support_from || null,
+    offline_reason: opts.offline_reason || null,
   });
 }
 

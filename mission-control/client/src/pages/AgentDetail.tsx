@@ -5,6 +5,7 @@ import { formatDistanceToNow, format } from 'date-fns';
 import {
   ArrowLeft, Activity, Code, AlertCircle, CheckCircle2,
   Wrench, Play, Pause, RefreshCw, MessageSquare, Zap,
+  Cpu, Clock, Users,
 } from 'lucide-react';
 
 const STATUS_COLORS: Record<string, string> = {
@@ -133,6 +134,70 @@ export default function AgentDetail() {
             <p className="mt-2 text-xs text-orange-700 bg-orange-50 px-2 py-1 rounded border border-orange-100">
               Reason: {agentInfo.reason_code}
             </p>
+          )}
+
+          {/* Extended fields row */}
+          <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {agentInfo.model && (
+              <div className="flex items-center gap-2 text-xs text-gray-500">
+                <Cpu className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                <span className="font-medium text-gray-600">模型:</span>
+                <span className="font-mono text-gray-700">{agentInfo.model}</span>
+              </div>
+            )}
+            {agentInfo.needs_support_from && (
+              <div className="flex items-center gap-2 text-xs text-orange-600">
+                <Users className="w-3.5 h-3.5 shrink-0" />
+                <span className="font-medium">需要支持:</span>
+                <span>{agentInfo.needs_support_from}</span>
+              </div>
+            )}
+            {agentInfo.offline_reason && (
+              <div className="flex items-center gap-2 text-xs text-red-600 col-span-2">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                <span className="font-medium">故障原因:</span>
+                <span>{agentInfo.offline_reason}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Model usage bar */}
+          {agentInfo.model_usage && (() => {
+            try {
+              const usage = typeof agentInfo.model_usage === 'string'
+                ? JSON.parse(agentInfo.model_usage)
+                : agentInfo.model_usage;
+              return (
+                <div className="mt-3">
+                  <div className="flex justify-between text-xs text-gray-500 mb-1">
+                    <span className="flex items-center gap-1"><Cpu className="w-3 h-3" /> 模型用量</span>
+                    <span>{usage.tokens_used?.toLocaleString()} / {usage.quota?.toLocaleString()} tokens ({usage.pct}%)</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-1.5">
+                    <div
+                      className={`h-1.5 rounded-full transition-all ${usage.pct > 80 ? 'bg-red-500' : usage.pct > 50 ? 'bg-yellow-400' : 'bg-green-500'}`}
+                      style={{ width: `${Math.min(usage.pct, 100)}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            } catch { return null; }
+          })()}
+
+          {/* Last task */}
+          {agentInfo.last_task && (
+            <div className="mt-3 flex items-start gap-2 text-xs text-gray-500 bg-gray-50 rounded p-2 border border-gray-100">
+              <Clock className="w-3.5 h-3.5 mt-0.5 shrink-0 text-gray-400" />
+              <div>
+                <span className="font-medium text-gray-600">上一任务: </span>
+                <span>{agentInfo.last_task}</span>
+                {agentInfo.last_task_at && (
+                  <span className="ml-1 text-gray-400">
+                    ({formatDistanceToNow(new Date(agentInfo.last_task_at))} ago)
+                  </span>
+                )}
+              </div>
+            </div>
           )}
         </div>
       )}

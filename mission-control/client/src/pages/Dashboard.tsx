@@ -5,7 +5,8 @@ import { Link } from 'react-router-dom';
 import { formatDistanceToNow } from 'date-fns';
 import {
   Bot, CheckCircle, Clock, AlertTriangle, PlayCircle,
-  Pause, XCircle, ChevronRight, Zap, FileText, ShieldAlert
+  Pause, XCircle, ChevronRight, Zap, FileText, ShieldAlert,
+  Cpu, Users,
 } from 'lucide-react';
 
 const STATUS_CONFIG: Record<string, { dot: string; badge: string; icon: React.ReactElement; label: string }> = {
@@ -224,10 +225,31 @@ export default function Dashboard() {
                           → {agent.needs_owner}
                         </span>
                       )}
+                      {agent.needs_support_from && !isOffline && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-orange-50 text-orange-700 border border-orange-200 rounded-full">
+                          <Users className="w-2.5 h-2.5" />
+                          需要: {agent.needs_support_from}
+                        </span>
+                      )}
                     </div>
                     <p className="text-xs text-gray-500 mt-0.5 truncate">
-                      {isOffline ? 'No heartbeat — agent may be offline' : (agent.current_task || 'No active task')}
+                      {isOffline
+                        ? (agent.offline_reason || 'No heartbeat — agent may be offline')
+                        : (agent.current_task || 'No active task')}
                     </p>
+                    {/* Model tag */}
+                    {agent.model && !isOffline && (
+                      <p className="text-xs text-blue-400 mt-0.5 flex items-center gap-1">
+                        <Cpu className="w-2.5 h-2.5" />
+                        {agent.model}
+                      </p>
+                    )}
+                    {/* Last task */}
+                    {agent.last_task && !isOffline && (
+                      <p className="text-xs text-gray-400 mt-0.5 truncate">
+                        ↩ {agent.last_task}
+                      </p>
+                    )}
                     {agent.reason_code && !isOffline && (
                       <p className="text-xs text-orange-600 font-mono mt-0.5">⚠ {agent.reason_code}</p>
                     )}
@@ -246,6 +268,23 @@ export default function Dashboard() {
                         <span className="text-xs text-gray-400">{agent.progress_pct}%</span>
                       </div>
                     )}
+                    {agent.model_usage && !isOffline && (() => {
+                      try {
+                        const u = typeof agent.model_usage === 'string' ? JSON.parse(agent.model_usage) : agent.model_usage;
+                        return (
+                          <div className="flex items-center gap-1.5" title={`${u.tokens_used?.toLocaleString()} / ${u.quota?.toLocaleString()} tokens`}>
+                            <Cpu className="w-2.5 h-2.5 text-gray-300" />
+                            <div className="w-14 bg-gray-200 rounded-full h-1">
+                              <div
+                                className={`h-1 rounded-full ${u.pct > 80 ? 'bg-red-400' : u.pct > 50 ? 'bg-yellow-400' : 'bg-green-400'}`}
+                                style={{ width: `${Math.min(u.pct, 100)}%` }}
+                              />
+                            </div>
+                            <span className="text-xs text-gray-400">{u.pct}%</span>
+                          </div>
+                        );
+                      } catch { return null; }
+                    })()}
                     <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-gray-500" />
                   </div>
                 </Link>
