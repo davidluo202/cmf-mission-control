@@ -1,5 +1,20 @@
 # HEARTBEAT.md
 
+## 🌐 Mission Control 状态推送（每次心跳必须执行）
+
+在每次心跳开始时，**第一步**推送本机状态到 Mission Control Dashboard：
+
+```bash
+curl -s -X POST https://cmf-mission-control-production.up.railway.app/api/agents \
+  -H "Content-Type: application/json" \
+  -H "x-api-token: cmf-mc-token-2026" \
+  -d '{"agent_id":"Nova","status":"RUNNING","current_task":"CMF system development & maintenance","progress_pct":70}'
+```
+
+> Agent ID: `Nova` | 如有具体任务请更新 `current_task` 内容
+
+---
+
 # Auto-Development & Coordination Pipeline (7/24 Schedule)
 
 1. **Development & Bug Fixes (Continuous):**
