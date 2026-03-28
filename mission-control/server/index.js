@@ -241,14 +241,16 @@ const clientDist = fs.existsSync(path.join(__dirname, 'client-dist'))
 
 if (fs.existsSync(clientDist)) {
   app.use(express.static(clientDist));
-  // Explicit root → index.html (Express 5 wildcard doesn't match /)
-  app.get('/', (req, res) => {
+  const sendIndex = (req, res) => {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     res.sendFile(path.join(clientDist, 'index.html'));
-  });
+  };
+  // Explicit root → index.html (Express 5 wildcard doesn't match /)
+  app.get('/', sendIndex);
   // SPA fallback: all non-API routes serve index.html (Express 5 syntax)
   app.get('/*splat', (req, res) => {
     if (!req.path.startsWith('/api') && !req.path.startsWith('/health')) {
-      res.sendFile(path.join(clientDist, 'index.html'));
+      sendIndex(req, res);
     }
   });
   console.log(`   Frontend: serving static files from ${clientDist}`);
