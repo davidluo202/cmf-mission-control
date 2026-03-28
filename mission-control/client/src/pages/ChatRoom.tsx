@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { getChatMessages, sendChatMessage } from '../api';
 import { format } from 'date-fns';
-import { Send, Users, Loader2, Hash, AtSign } from 'lucide-react';
+import { Send, Users, Loader2, Hash, AtSign, ArrowDown } from 'lucide-react';
 
 const KNOWN_AGENTS = ['Nova', 'Qual', 'Icy', 'Imax', 'Nas', 'David'];
 const TOPICS = ['General', 'Deploy', 'Bug', 'Proposal', 'Urgent'];
@@ -46,7 +46,9 @@ export default function ChatRoom() {
   const [showMentionHint, setShowMentionHint] = useState(false);
   const [mentionFilter, setMentionFilter] = useState('');
   const [sender] = useState('David');
+  const [autoScroll, setAutoScroll] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const loadMessages = async () => {
@@ -60,9 +62,21 @@ export default function ChatRoom() {
     return () => clearInterval(timer);
   }, []);
 
+  // Auto-scroll only when user hasn't manually scrolled up
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    if (autoScroll) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages, autoScroll]);
+
+  // Detect manual scroll: if user scrolls up, pause auto-scroll;
+  // if they reach the bottom, resume it
+  const handleScroll = () => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+    setAutoScroll(atBottom);
+  };
 
   // @mention autocomplete
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -95,6 +109,7 @@ export default function ChatRoom() {
     setSending(true);
     setInput('');
     setShowMentionHint(false);
+    setAutoScroll(true); // resume auto-scroll when user sends a message
     try {
       await sendChatMessage({
         sender,
@@ -141,7 +156,11 @@ export default function ChatRoom() {
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-gray-50">
+      <div
+        ref={scrollContainerRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto p-6 space-y-4 bg-gray-50 relative"
+      >
         {filteredMessages.map((msg) => {
           const isSelf = msg.sender === sender;
           const mentions: string[] = (() => {
@@ -179,6 +198,20 @@ export default function ChatRoom() {
           );
         })}
         <div ref={messagesEndRef} />
+
+        {/* Scroll-to-bottom button — only shown when user has scrolled up */}
+        {!autoScroll && (
+          <button
+            onClick={() => {
+              setAutoScroll(true);
+              messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+            }}
+            className="sticky bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-xs rounded-full shadow-lg hover:bg-blue-700 transition-all z-10"
+          >
+            <ArrowDown className="w-3 h-3" />
+            回到最新
+          </button>
+        )}
       </div>
 
       {/* Input */}
