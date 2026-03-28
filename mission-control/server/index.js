@@ -234,7 +234,11 @@ app.post('/api/incidents/:id/revive', auth, (req, res) => {
 });
 
 // Serve frontend static files (client/dist)
-const clientDist = path.join(__dirname, '..', 'client', 'dist');
+// Railway: client-dist/ is bundled inside server dir (copied at build time)
+const clientDist = fs.existsSync(path.join(__dirname, 'client-dist'))
+  ? path.join(__dirname, 'client-dist')
+  : path.join(__dirname, '..', 'client', 'dist');
+
 if (fs.existsSync(clientDist)) {
   app.use(express.static(clientDist));
   // SPA fallback: all non-API routes serve index.html
@@ -244,6 +248,8 @@ if (fs.existsSync(clientDist)) {
     }
   });
   console.log(`   Frontend: serving static files from ${clientDist}`);
+} else {
+  console.warn(`   Frontend: client dist not found at ${clientDist}`);
 }
 
 // Start
