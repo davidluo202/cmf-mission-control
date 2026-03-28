@@ -99,7 +99,7 @@ function getNasStats() {
 // Check Mission Control health
 function checkHealth() {
   return new Promise((resolve) => {
-    const req = http.get(`${MC_URL}/`, { timeout: 3000 }, res => {
+    const req = http.get(`${MC_URL}/health`, { timeout: 3000 }, res => {
       let raw = '';
       res.on('data', c => raw += c);
       res.on('end', () => {

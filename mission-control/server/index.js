@@ -100,7 +100,7 @@ function auth(req, res, next) {
   next();
 }
 
-app.get('/', (req, res) => {
+app.get('/health', (req, res) => {
   res.json({
     service: 'CMF Mission Control Server',
     version: '0.3.0',
