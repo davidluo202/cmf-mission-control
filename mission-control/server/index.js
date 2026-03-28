@@ -2,7 +2,7 @@
  * Mission Control Server - Canton Financial AI Team
  * Phase 2: REST API + SQLite (Agent States, ChatRoom, Proposals, Incidents)
  * Author: Nova (CMF Lead Developer)
- * Version: 0.2.0 | 2026-03-25
+ * Version: 0.3.0 | 2026-03-28
  */
 
 const express = require('express');
@@ -16,6 +16,8 @@ const app = express();
 const PORT = process.env.PORT || 8765;
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const API_TOKEN = process.env.API_TOKEN || 'cmf-mc-token-2026';
+// Dashboard UI password (set via env var in Railway/production)
+const DASHBOARD_PASSWORD = process.env.DASHBOARD_PASSWORD || 'cmf-mc-2026';
 
 app.use(cors());
 app.use(express.json());
@@ -101,9 +103,19 @@ function auth(req, res, next) {
 app.get('/', (req, res) => {
   res.json({
     service: 'CMF Mission Control Server',
-    version: '0.2.0',
+    version: '0.3.0',
     status: 'running'
   });
+});
+
+// POST /api/auth/login — Dashboard password verification (backend-validated)
+app.post('/api/auth/login', (req, res) => {
+  const { password } = req.body;
+  if (password === DASHBOARD_PASSWORD) {
+    res.json({ ok: true, token: API_TOKEN });
+  } else {
+    res.status(401).json({ ok: false, error: 'Invalid password' });
+  }
 });
 
 // GET /api/agents (Agent 总览)

@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react
 import { LayoutDashboard, MessageSquare, AlertTriangle, FileText, Activity, Menu, X } from 'lucide-react';
 import Dashboard from './pages/Dashboard';
 import ChatRoom from './pages/ChatRoom';
+import Login from './pages/Login';
 import AgentDetail from './pages/AgentDetail';
 import Proposals from './pages/Proposals';
 import Incidents from './pages/Incidents';
@@ -64,8 +65,13 @@ function Sidebar({ sidebarOpen, closeSidebar }: { sidebarOpen: boolean; closeSid
 
 function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [authed, setAuthed] = useState(() => sessionStorage.getItem('mc_authed') === '1');
 
   const closeSidebar = () => setSidebarOpen(false);
+
+  if (!authed) {
+    return <Login onLogin={() => setAuthed(true)} />;
+  }
 
   return (
     <Router>
