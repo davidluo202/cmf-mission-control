@@ -70,11 +70,11 @@ export default function ChatRoom() {
   }, [messages, autoScroll]);
 
   // Detect manual scroll: if user scrolls up, pause auto-scroll;
-  // if they reach the bottom, resume it
+  // if they reach the bottom, resume it (tightened threshold to 20px)
   const handleScroll = () => {
     const el = scrollContainerRef.current;
     if (!el) return;
-    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 20;
     setAutoScroll(atBottom);
   };
 
