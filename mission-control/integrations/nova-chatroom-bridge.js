@@ -13,7 +13,7 @@
  *   或加入 pm2: pm2 start nova-chatroom-bridge.js --name nova-mc-bridge
  * 
  * 环境变量：
- *   MISSION_CONTROL_URL  (default: http://100.107.235.107:8765)
+ *   MISSION_CONTROL_URL  (default: https://cmf-mission-control-production.up.railway.app)
  *   MC_TOKEN             (default: cmf-mc-token-2026)
  *   TG_BOT_TOKEN         Telegram Bot Token (cmfcoding_bot)
  *   TG_GROUP_ID          Telegram Group ID (e.g. -1003872131933)
@@ -25,7 +25,7 @@ const https = require('https');
 const fs = require('fs');
 const path = require('path');
 
-const MC_URL = process.env.MISSION_CONTROL_URL || 'http://100.107.235.107:8765';
+const MC_URL = process.env.MISSION_CONTROL_URL || 'https://cmf-mission-control-production.up.railway.app';
 const MC_TOKEN = process.env.MC_TOKEN || 'cmf-mc-token-2026';
 const TG_BOT_TOKEN = process.env.TG_BOT_TOKEN;
 const TG_GROUP_ID = process.env.TG_GROUP_ID || '-1003872131933';

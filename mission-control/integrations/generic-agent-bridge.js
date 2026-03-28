@@ -22,7 +22,7 @@ const AGENT_CONFIG = {
   agentId: process.env.AGENT_ID || 'Qual',
 
   // Mission Control 地址
-  mcUrl: process.env.MC_URL || process.env.MISSION_CONTROL_URL || 'http://100.107.235.107:8765',
+  mcUrl: process.env.MC_URL || process.env.MISSION_CONTROL_URL || 'https://cmf-mission-control-production.up.railway.app',
   mcToken: process.env.MC_TOKEN || 'cmf-mc-token-2026',
 
   // Telegram 通知配置（收到 @mention 时通知）

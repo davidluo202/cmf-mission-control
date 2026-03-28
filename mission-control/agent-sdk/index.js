@@ -4,7 +4,7 @@
  * 
  * Usage:
  *   const mc = require('./mission-control/agent-sdk');
- *   mc.init({ agentId: 'nova', token: 'cmf-mc-token-2026', baseUrl: 'http://100.107.235.107:8765' });
+ *   mc.init({ agentId: 'nova', token: 'cmf-mc-token-2026', baseUrl: 'https://cmf-mission-control-production.up.railway.app' });
  *   mc.setStatus('RUNNING', 'Building ChatRoom feature', 60);
  *   mc.event('task_started', 'Starting feature X', { detail: '...' });
  *   mc.incident('RATE_LIMIT', 'Hit OpenAI rate limit', 'Retry in 60s');
@@ -16,7 +16,7 @@ const http = require('http');
 let _config = {
   agentId: 'unknown',
   token: 'cmf-mc-token-2026',
-  baseUrl: process.env.MISSION_CONTROL_URL || 'http://100.107.235.107:8765',
+  baseUrl: process.env.MISSION_CONTROL_URL || 'https://cmf-mission-control-production.up.railway.app',
   silent: false, // set true to suppress console logs
 };
 

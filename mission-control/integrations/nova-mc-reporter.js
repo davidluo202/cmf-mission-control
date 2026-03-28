@@ -16,7 +16,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-const MC_URL = process.env.MC_URL || process.env.MISSION_CONTROL_URL || 'http://100.107.235.107:8765';
+const MC_URL = process.env.MC_URL || process.env.MISSION_CONTROL_URL || 'https://cmf-mission-control-production.up.railway.app';
 const MC_TOKEN = process.env.MC_TOKEN || 'cmf-mc-token-2026';
 const AGENT_ID = 'Nova';
 const INTERVAL_MS = parseInt(process.env.INTERVAL_MS || '15000');

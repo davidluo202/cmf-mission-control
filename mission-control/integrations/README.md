@@ -34,12 +34,12 @@ David AI Bot (Mac)          NAS Ubuntu VM
 cd /Users/davidluo-bot/.openclaw/workspace-cmfcoding/mission-control/integrations
 
 # Nova reporter — 读取 session 日志推状态
-MC_URL=http://100.107.235.107:8765 \
+MC_URL=https://cmf-mission-control-production.up.railway.app \
 MC_TOKEN=cmf-mc-token-2026 \
 node nova-mc-reporter.js
 
 # 或 pm2
-MC_URL=http://100.107.235.107:8765 \
+MC_URL=https://cmf-mission-control-production.up.railway.app \
 pm2 start nova-mc-reporter.js --name nova-mc-reporter
 pm2 save
 ```
@@ -75,7 +75,7 @@ pm2 save
 # Icy
 AGENT_ID=Icy \
 TG_BOT_TOKEN="<icy_bot_token>" \
-MC_URL=http://100.107.235.107:8765 \
+MC_URL=https://cmf-mission-control-production.up.railway.app \
 SESSION_DIR="/path/to/.openclaw/agents/icy-ai/sessions" \
 INITIAL_STATUS=IDLE \
 INITIAL_TASK="Monitoring team and coordinating tasks" \
@@ -84,7 +84,7 @@ pm2 start generic-agent-bridge.js --name icy-mc-bridge
 # Qual
 AGENT_ID=Qual \
 TG_BOT_TOKEN="<qual_bot_token>" \
-MC_URL=http://100.107.235.107:8765 \
+MC_URL=https://cmf-mission-control-production.up.railway.app \
 INITIAL_STATUS=IDLE \
 INITIAL_TASK="Awaiting PRs for review and testing" \
 pm2 start generic-agent-bridge.js --name qual-mc-bridge
@@ -92,7 +92,7 @@ pm2 start generic-agent-bridge.js --name qual-mc-bridge
 # Imax
 AGENT_ID=Imax \
 TG_BOT_TOKEN="<imax_bot_token>" \
-MC_URL=http://100.107.235.107:8765 \
+MC_URL=https://cmf-mission-control-production.up.railway.app \
 INITIAL_STATUS=IDLE \
 INITIAL_TASK="Awaiting deployment instructions" \
 pm2 start generic-agent-bridge.js --name imax-mc-bridge

@@ -10,7 +10,7 @@ const mc = require('/path/to/mission-control/agent-sdk');
 mc.init({
   agentId: 'nova',                                    // 你的 Agent ID
   token: process.env.MC_TOKEN || 'cmf-mc-token-2026', // API Token
-  baseUrl: 'http://100.107.235.107:8765',             // Mission Control 地址
+  baseUrl: 'https://cmf-mission-control-production.up.railway.app',             // Mission Control 地址
 });
 ```
 
