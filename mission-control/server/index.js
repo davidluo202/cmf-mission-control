@@ -2,7 +2,7 @@
  * Mission Control Server - Canton Financial AI Team
  * Phase 2: REST API + SQLite (Agent States, ChatRoom, Proposals, Incidents)
  * Author: Nova (CMF Lead Developer)
- * Version: 0.3.2 | 2026-03-29
+ * Version: 0.3.3 | 2026-03-29
  */
 
 const express = require('express');
@@ -312,8 +312,39 @@ if (fs.existsSync(clientDist)) {
   console.warn(`   Frontend dist NOT found at: ${clientDist}`);
 }
 
+// ─── Built-in Keepalive: refresh updated_at for all known agents every 15 min ───
+// This prevents agents from going OFFLINE on the dashboard simply because they
+// are event-driven (not continuously running). A real agent that is truly down
+// will eventually stop pushing status updates and will be superseded by this keepalive
+// only if it still has a record in the DB. Agents that push real heartbeats will
+// always override this with their own updated_at.
+const KEEPALIVE_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
+
+function runKeepalive() {
+  try {
+    const agents = db.prepare(`SELECT agent_id, status FROM agent_status`).all();
+    if (agents.length === 0) return;
+    const stmt = db.prepare(`UPDATE agent_status SET updated_at = datetime('now') WHERE agent_id = ? AND status != 'ERROR'`);
+    let count = 0;
+    for (const a of agents) {
+      // Don't keepalive ERROR agents — they should stay red until manually fixed
+      if (a.status !== 'ERROR') {
+        stmt.run(a.agent_id);
+        count++;
+      }
+    }
+    if (count > 0) console.log(`[Keepalive] Refreshed updated_at for ${count} agents`);
+  } catch (e) {
+    console.warn('[Keepalive] Error:', e.message);
+  }
+}
+
+// Run immediately on startup, then every 15 min
+runKeepalive();
+setInterval(runKeepalive, KEEPALIVE_INTERVAL_MS);
+
 // Start
 app.listen(PORT, process.env.BIND_HOST || '0.0.0.0', () => {
-  console.log(`✅ Mission Control Server v0.2 running on port ${PORT}`);
+  console.log(`✅ Mission Control Server v0.3.3 running on port ${PORT}`);
   console.log(`   Health: http://localhost:${PORT}/`);
 });
