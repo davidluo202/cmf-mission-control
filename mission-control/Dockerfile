@@ -11,8 +11,14 @@ COPY . .
 WORKDIR /app/server
 RUN npm ci
 
-# Go back to root
+# Build client and place artifacts where server expects them
+WORKDIR /app/client
+RUN npm ci
+RUN npm run build
+
 WORKDIR /app
+RUN rm -rf /app/server/client-dist && mkdir -p /app/server/client-dist \
+  && cp -a /app/client/dist/. /app/server/client-dist/
 
 ENV DATA_DIR=/data
 ENV PORT=8765
