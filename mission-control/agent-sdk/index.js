@@ -8,6 +8,7 @@
  *   mc.setStatus('RUNNING', 'Building ChatRoom feature', 60);
  *   mc.event('task_started', 'Starting feature X', { detail: '...' });
  *   mc.incident('RATE_LIMIT', 'Hit OpenAI rate limit', 'Retry in 60s');
+ *   mc.startHeartbeat(300000); // ping every 5 minutes to stay ONLINE
  */
 
 const https = require('https');
@@ -143,6 +144,24 @@ function propose(title, decision_level, opts = {}) {
   });
 }
 
+/**
+ * Send a lightweight heartbeat ping to keep this agent ONLINE on the dashboard.
+ * Does not change status/task — just updates updated_at.
+ */
+function heartbeat() {
+  return _post(`/api/agents/${_config.agentId}/heartbeat`, {});
+}
+
+/**
+ * Start a recurring heartbeat timer.
+ * @param {number} intervalMs  Interval in ms (default: 5 minutes)
+ * @returns {NodeJS.Timeout}   The interval handle (call clearInterval to stop)
+ */
+function startHeartbeat(intervalMs = 5 * 60 * 1000) {
+  heartbeat(); // ping immediately
+  return setInterval(() => heartbeat(), intervalMs);
+}
+
 function _get(path) {
   return new Promise((resolve, reject) => {
     const url = new URL(_config.baseUrl + path);
@@ -189,4 +208,4 @@ async function pollMessages(sinceTimestamp, limit = 50) {
   return result.messages.filter(m => new Date(m.timestamp) > new Date(sinceTimestamp));
 }
 
-module.exports = { init, setStatus, event, incident, chat, propose, getMessages, pollMessages };
+module.exports = { init, setStatus, event, incident, chat, propose, getMessages, pollMessages, heartbeat, startHeartbeat };

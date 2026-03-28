@@ -45,7 +45,24 @@ const STATUS_CONFIG: Record<string, { dot: string; badge: string; icon: React.Re
     icon: <XCircle className="w-3 h-3" />,
     label: 'ERROR',
   },
+  OFFLINE: {
+    dot: 'bg-gray-300',
+    badge: 'bg-gray-100 text-gray-400 border-gray-200',
+    icon: <XCircle className="w-3 h-3" />,
+    label: 'OFFLINE',
+  },
 };
+
+// Agents are considered offline if no heartbeat in OFFLINE_THRESHOLD_MS
+const OFFLINE_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes
+
+function getEffectiveStatus(agent: any): string {
+  if (!agent.updated_at) return agent.status;
+  const lastSeen = new Date(agent.updated_at + 'Z').getTime(); // SQLite stores UTC without Z
+  const now = Date.now();
+  if (now - lastSeen > OFFLINE_THRESHOLD_MS) return 'OFFLINE';
+  return agent.status;
+}
 
 // Seed demo data so dashboard isn't empty
 async function seedDemoData() {
@@ -80,7 +97,10 @@ export default function Dashboard() {
 
   const pendingProposals = proposals.filter(p => p.status === 'WAITING_DECISION');
   const openIncidents = incidents.filter(i => i.status === 'OPEN');
-  const runningAgents = agents.filter(a => a.status === 'RUNNING' || a.status === 'working');
+  const runningAgents = agents.filter(a => {
+    const eff = getEffectiveStatus(a);
+    return eff === 'RUNNING' || eff === 'working';
+  });
 
   const handleSeed = async () => {
     setSeeding(true);
@@ -170,16 +190,22 @@ export default function Dashboard() {
         ) : (
           <div className="divide-y divide-gray-100">
             {agents.map(agent => {
-              const cfg = STATUS_CONFIG[agent.status] || STATUS_CONFIG.IDLE;
+              const effectiveStatus = getEffectiveStatus(agent);
+              const cfg = STATUS_CONFIG[effectiveStatus] || STATUS_CONFIG.IDLE;
+              const isOffline = effectiveStatus === 'OFFLINE';
+              // Parse updated_at as UTC
+              const lastSeenDate = agent.updated_at
+                ? new Date(agent.updated_at.endsWith('Z') ? agent.updated_at : agent.updated_at + 'Z')
+                : null;
               return (
                 <Link
                   key={agent.agent_id}
                   to={`/agent/${agent.agent_id}`}
-                  className="flex items-center gap-4 px-6 py-4 hover:bg-gray-50 transition-colors group"
+                  className={`flex items-center gap-4 px-6 py-4 hover:bg-gray-50 transition-colors group ${isOffline ? 'opacity-60' : ''}`}
                 >
                   {/* Avatar */}
                   <div className="relative shrink-0">
-                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center text-white font-bold text-sm uppercase">
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm uppercase ${isOffline ? 'bg-gray-400' : 'bg-gradient-to-br from-blue-500 to-blue-700'}`}>
                       {agent.agent_id.charAt(0)}
                     </div>
                     <span className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white ${cfg.dot}`} />
@@ -193,26 +219,26 @@ export default function Dashboard() {
                         {cfg.icon}
                         {cfg.label}
                       </span>
-                      {agent.needs_owner && (
+                      {agent.needs_owner && !isOffline && (
                         <span className="px-2 py-0.5 text-xs bg-purple-50 text-purple-700 border border-purple-200 rounded-full">
                           → {agent.needs_owner}
                         </span>
                       )}
                     </div>
                     <p className="text-xs text-gray-500 mt-0.5 truncate">
-                      {agent.current_task || 'No active task'}
+                      {isOffline ? 'No heartbeat — agent may be offline' : (agent.current_task || 'No active task')}
                     </p>
-                    {agent.reason_code && (
+                    {agent.reason_code && !isOffline && (
                       <p className="text-xs text-orange-600 font-mono mt-0.5">⚠ {agent.reason_code}</p>
                     )}
                   </div>
 
                   {/* Right side */}
                   <div className="shrink-0 flex flex-col items-end gap-1.5">
-                    <span className="text-xs text-gray-400">
-                      {agent.updated_at ? formatDistanceToNow(new Date(agent.updated_at)) + ' ago' : ''}
+                    <span className={`text-xs ${isOffline ? 'text-red-400' : 'text-gray-400'}`}>
+                      {lastSeenDate ? formatDistanceToNow(lastSeenDate) + ' ago' : ''}
                     </span>
-                    {(agent.progress_pct > 0) && (
+                    {(agent.progress_pct > 0) && !isOffline && (
                       <div className="flex items-center gap-2">
                         <div className="w-20 bg-gray-200 rounded-full h-1.5">
                           <div className="bg-blue-500 h-1.5 rounded-full" style={{ width: `${agent.progress_pct}%` }} />

@@ -2,7 +2,7 @@
  * Mission Control Server - Canton Financial AI Team
  * Phase 2: REST API + SQLite (Agent States, ChatRoom, Proposals, Incidents)
  * Author: Nova (CMF Lead Developer)
- * Version: 0.3.0 | 2026-03-28
+ * Version: 0.3.1 | 2026-03-29
  */
 
 const express = require('express');
@@ -225,6 +225,14 @@ app.post('/api/incidents', auth, (req, res) => {
 // POST /api/incidents/:id/revive (复活操作)
 app.post('/api/incidents/:id/revive', auth, (req, res) => {
   db.prepare(`UPDATE incidents SET status = 'RESOLVED', updated_at = datetime('now') WHERE id = ?`).run(req.params.id);
+  res.json({ ok: true });
+});
+
+// POST /api/agents/:id/heartbeat (Agent 心跳 ping — 只更新 updated_at，不改状态)
+app.post('/api/agents/:id/heartbeat', auth, (req, res) => {
+  const agent = db.prepare('SELECT * FROM agent_status WHERE agent_id = ?').get(req.params.id);
+  if (!agent) return res.status(404).json({ error: 'Agent not found' });
+  db.prepare(`UPDATE agent_status SET updated_at = datetime('now') WHERE agent_id = ?`).run(req.params.id);
   res.json({ ok: true });
 });
 
