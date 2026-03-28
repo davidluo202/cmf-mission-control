@@ -54,7 +54,7 @@ const STATUS_CONFIG: Record<string, { dot: string; badge: string; icon: React.Re
 };
 
 // Agents are considered offline if no heartbeat in OFFLINE_THRESHOLD_MS
-const OFFLINE_THRESHOLD_MS = 30 * 60 * 1000; // 30 minutes
+const OFFLINE_THRESHOLD_MS = 2 * 60 * 60 * 1000; // 2 hours
 
 function getEffectiveStatus(agent: any): string {
   if (!agent.updated_at) return agent.status;
