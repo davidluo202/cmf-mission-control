@@ -35,3 +35,10 @@ export const reviveIncident   = (id: string) => api.post(`/incidents/${id}/reviv
 export const pingAgent        = (id: string) => api.post(`/agents/${id}/heartbeat`);
 export const getHealth        = () =>
   axios.get(resolveApiBaseUrl().replace('/api', '/health')).then(r => r.data);
+
+export const getHealthChecks        = (params?: { agent_id?: string; status?: string; check_type?: string }) =>
+  api.get('/health-checks', { params }).then(r => r.data.health_checks);
+export const getHealthChecksSummary = () =>
+  api.get('/health-checks/summary').then(r => r.data.summary);
+export const postHealthCheck        = (payload: any) => api.post('/health-checks', payload);
+export const resolveHealthCheck     = (id: string) => api.post(`/health-checks/${id}/resolve`);

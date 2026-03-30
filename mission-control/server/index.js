@@ -2,7 +2,7 @@
  * Mission Control Server - Canton Financial AI Team
  * Phase 2: REST API + SQLite (Agent States, ChatRoom, Proposals, Incidents)
  * Author: Nova (CMF Lead Developer)
- * Version: 0.5.0 | 2026-03-30
+ * Version: 0.5.1 | 2026-03-30
  */
 
 const express = require('express');
@@ -35,6 +35,16 @@ const migrations = [
   `ALTER TABLE agent_status ADD COLUMN last_task_at TEXT`,
   `ALTER TABLE agent_status ADD COLUMN needs_support_from TEXT`,
   `ALTER TABLE agent_status ADD COLUMN offline_reason TEXT`,
+  // v0.5.1: health_checks table (CREATE IF NOT EXISTS — safe to run multiple times)
+  `CREATE TABLE IF NOT EXISTS health_checks (
+    id TEXT PRIMARY KEY,
+    agent_id TEXT,
+    timestamp TEXT,
+    check_type TEXT,
+    status TEXT,
+    detail TEXT,
+    auto_resolved INTEGER DEFAULT 0
+  )`,
 ];
 for (const sql of migrations) {
   try { db.exec(sql); } catch (e) { /* column already exists — safe to ignore */ }
@@ -112,7 +122,7 @@ app.get('/health', (req, res) => {
   const uptimeSec = Math.floor((Date.now() - SERVER_START_TIME) / 1000);
   res.json({
     service: 'CMF Mission Control Server',
-    version: '0.5.0',
+    version: '0.5.1',
     status: 'running',
     uptime_sec: uptimeSec,
     started_at: new Date(SERVER_START_TIME).toISOString(),
@@ -138,7 +148,8 @@ app.get('/api/agents', auth, (req, res) => {
 app.post('/api/agents', auth, (req, res) => {
   const {
     agent_id, status, current_task, progress_pct, reason_code, needs_owner,
-    model, model_usage, last_task, last_task_at, needs_support_from, offline_reason
+    model, model_usage, last_task, last_task_at, needs_support_from, offline_reason,
+    health, // optional: { gateway_status: {status, detail}, model_api: {...}, ... }
   } = req.body;
   if (!agent_id || !status) return res.status(400).json({ error: 'agent_id and status required' });
 
@@ -157,6 +168,25 @@ app.post('/api/agents', auth, (req, res) => {
     needs_support_from || null,
     offline_reason || null
   );
+
+  // Bulk-upsert health checks if provided
+  if (health && typeof health === 'object') {
+    const VALID_TYPES = ['gateway_status', 'model_api', 'session_health', 'vpn_routing', 'heartbeat_stale'];
+    const VALID_STATUSES = ['OK', 'WARNING', 'ERROR', 'UNKNOWN'];
+    const stmt = db.prepare(`
+      INSERT INTO health_checks (id, agent_id, timestamp, check_type, status, detail, auto_resolved)
+      VALUES (?, ?, ?, ?, ?, ?, 0)
+    `);
+    const ts = new Date().toISOString();
+    for (const [check_type, val] of Object.entries(health)) {
+      if (!VALID_TYPES.includes(check_type)) continue;
+      const checkStatus = (val as any)?.status;
+      if (!checkStatus || !VALID_STATUSES.includes(checkStatus)) continue;
+      const detail = (val as any)?.detail || null;
+      const id = 'hc_' + uuidv4().substring(0, 8);
+      stmt.run(id, agent_id, ts, check_type, checkStatus, detail);
+    }
+  }
 
   res.json({ ok: true });
 });
@@ -260,6 +290,80 @@ app.post('/api/incidents', auth, (req, res) => {
 // POST /api/incidents/:id/revive (复活操作)
 app.post('/api/incidents/:id/revive', auth, (req, res) => {
   db.prepare(`UPDATE incidents SET status = 'RESOLVED', updated_at = datetime('now') WHERE id = ?`).run(req.params.id);
+  res.json({ ok: true });
+});
+
+// ─── Health Check Endpoints ─────────────────────────────────────────────────
+
+// POST /api/health-checks — agent reports a health check result
+app.post('/api/health-checks', auth, (req, res) => {
+  const { agent_id, check_type, status, detail } = req.body;
+  if (!agent_id || !check_type || !status) {
+    return res.status(400).json({ error: 'agent_id, check_type, and status required' });
+  }
+  const VALID_TYPES = ['gateway_status', 'model_api', 'session_health', 'vpn_routing', 'heartbeat_stale'];
+  const VALID_STATUSES = ['OK', 'WARNING', 'ERROR', 'UNKNOWN'];
+  if (!VALID_TYPES.includes(check_type)) return res.status(400).json({ error: `Invalid check_type. Valid: ${VALID_TYPES.join(', ')}` });
+  if (!VALID_STATUSES.includes(status)) return res.status(400).json({ error: `Invalid status. Valid: ${VALID_STATUSES.join(', ')}` });
+
+  const id = 'hc_' + uuidv4().substring(0, 8);
+  db.prepare(`
+    INSERT INTO health_checks (id, agent_id, timestamp, check_type, status, detail, auto_resolved)
+    VALUES (?, ?, ?, ?, ?, ?, 0)
+  `).run(id, agent_id, new Date().toISOString(), check_type, status, detail || null);
+  res.json({ ok: true, id });
+});
+
+// GET /api/health-checks — get health check records (filterable by agent_id, status, check_type)
+app.get('/api/health-checks', auth, (req, res) => {
+  const { agent_id, status, check_type, limit = 200 } = req.query;
+  let sql = 'SELECT * FROM health_checks WHERE 1=1';
+  const params = [];
+  if (agent_id) { sql += ' AND agent_id = ?'; params.push(agent_id); }
+  if (status)   { sql += ' AND status = ?';   params.push(status); }
+  if (check_type) { sql += ' AND check_type = ?'; params.push(check_type); }
+  sql += ' ORDER BY timestamp DESC LIMIT ?';
+  params.push(parseInt(limit));
+  const rows = db.prepare(sql).all(...params);
+  res.json({ health_checks: rows });
+});
+
+// GET /api/health-checks/summary — per-agent latest status for each check type
+app.get('/api/health-checks/summary', auth, (req, res) => {
+  // For each (agent_id, check_type), return the most recent record
+  const rows = db.prepare(`
+    SELECT h.*
+    FROM health_checks h
+    INNER JOIN (
+      SELECT agent_id, check_type, MAX(timestamp) as max_ts
+      FROM health_checks
+      GROUP BY agent_id, check_type
+    ) latest ON h.agent_id = latest.agent_id
+                AND h.check_type = latest.check_type
+                AND h.timestamp = latest.max_ts
+    ORDER BY h.agent_id, h.check_type
+  `).all();
+
+  // Group into { [agent_id]: { [check_type]: {status, detail, timestamp, id} } }
+  const summary = {};
+  for (const row of rows) {
+    if (!summary[row.agent_id]) summary[row.agent_id] = {};
+    summary[row.agent_id][row.check_type] = {
+      id: row.id,
+      status: row.status,
+      detail: row.detail,
+      timestamp: row.timestamp,
+      auto_resolved: row.auto_resolved,
+    };
+  }
+  res.json({ summary });
+});
+
+// POST /api/health-checks/:id/resolve — mark a health check as resolved
+app.post('/api/health-checks/:id/resolve', auth, (req, res) => {
+  const check = db.prepare('SELECT * FROM health_checks WHERE id = ?').get(req.params.id);
+  if (!check) return res.status(404).json({ error: 'Health check not found' });
+  db.prepare(`UPDATE health_checks SET status = 'OK', auto_resolved = 1 WHERE id = ?`).run(req.params.id);
   res.json({ ok: true });
 });
 
@@ -382,6 +486,6 @@ setInterval(runKeepalive, KEEPALIVE_INTERVAL_MS);
 
 // Start
 app.listen(PORT, process.env.BIND_HOST || '0.0.0.0', () => {
-  console.log(`✅ Mission Control Server v0.5.0 running on port ${PORT}`);
+  console.log(`✅ Mission Control Server v0.5.1 running on port ${PORT}`);
   console.log(`   Health: http://localhost:${PORT}/`);
 });

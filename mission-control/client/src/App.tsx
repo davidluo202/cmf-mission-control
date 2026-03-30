@@ -2,23 +2,25 @@ import { useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, MessageSquare, AlertTriangle, FileText,
-  Activity, Menu, X, LogOut,
+  Activity, Menu, X, LogOut, HeartPulse,
 } from 'lucide-react';
 import Dashboard from './pages/Dashboard';
 import ChatRoom from './pages/ChatRoom';
 import AgentDetail from './pages/AgentDetail';
 import Proposals from './pages/Proposals';
 import Incidents from './pages/Incidents';
+import HealthChecks from './pages/HealthChecks';
 import Login from './pages/Login';
 
 function Sidebar({ sidebarOpen, closeSidebar }: { sidebarOpen: boolean; closeSidebar: () => void }) {
   const location = useLocation();
 
   const navLinks = [
-    { to: '/',          icon: <LayoutDashboard className="w-5 h-5 mr-3" />, label: 'Overview' },
-    { to: '/chatroom',  icon: <MessageSquare   className="w-5 h-5 mr-3" />, label: 'Chat Room' },
-    { to: '/proposals', icon: <FileText        className="w-5 h-5 mr-3" />, label: 'Proposals' },
-    { to: '/incidents', icon: <AlertTriangle   className="w-5 h-5 mr-3" />, label: 'Incidents' },
+    { to: '/',              icon: <LayoutDashboard className="w-5 h-5 mr-3" />, label: 'Overview' },
+    { to: '/chatroom',      icon: <MessageSquare   className="w-5 h-5 mr-3" />, label: 'Chat Room' },
+    { to: '/proposals',     icon: <FileText        className="w-5 h-5 mr-3" />, label: 'Proposals' },
+    { to: '/incidents',     icon: <AlertTriangle   className="w-5 h-5 mr-3" />, label: 'Incidents' },
+    { to: '/health-checks', icon: <HeartPulse      className="w-5 h-5 mr-3" />, label: 'Health' },
   ];
 
   const isActive = (to: string) =>
@@ -78,7 +80,7 @@ function Sidebar({ sidebarOpen, closeSidebar }: { sidebarOpen: boolean; closeSid
         </nav>
 
         <div className="px-3 py-3 border-t border-white/10">
-          <p className="text-center text-xs text-gray-500">Nova • Mission Control v0.5.0</p>
+          <p className="text-center text-xs text-gray-500">Nova • Mission Control v0.5.1</p>
         </div>
       </aside>
     </>
@@ -124,7 +126,7 @@ function App() {
                 <h2 className="text-sm lg:text-base font-semibold text-gray-800 leading-tight truncate">
                   Canton Financial AI Team
                 </h2>
-                <p className="text-xs text-gray-400 hidden sm:block">Mission Control v0.5.0</p>
+                <p className="text-xs text-gray-400 hidden sm:block">Mission Control v0.5.1</p>
               </div>
             </div>
 
@@ -148,13 +150,14 @@ function App() {
               <Route path="/"           element={<Dashboard />} />
               <Route path="/chatroom"   element={<ChatRoom />} />
               <Route path="/agent/:id"  element={<AgentDetail />} />
-              <Route path="/proposals"  element={<Proposals />} />
-              <Route path="/incidents"  element={<Incidents />} />
+              <Route path="/proposals"     element={<Proposals />} />
+              <Route path="/incidents"     element={<Incidents />} />
+              <Route path="/health-checks" element={<HealthChecks />} />
             </Routes>
           </div>
 
           <footer className="shrink-0 h-8 bg-white border-t border-gray-100 flex items-center justify-center">
-            <p className="text-xs text-gray-400">Nova • Mission Control v0.5.0 · Canton Financial AI Team</p>
+            <p className="text-xs text-gray-400">Nova • Mission Control v0.5.1 · Canton Financial AI Team</p>
           </footer>
         </main>
       </div>

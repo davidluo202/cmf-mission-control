@@ -1,11 +1,11 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { getAgents, getProposals, getIncidents, getHealth, sendChatMessage } from '../api';
+import { getAgents, getProposals, getIncidents, getHealth, getHealthChecksSummary, sendChatMessage } from '../api';
 import { Link } from 'react-router-dom';
 import { formatDistanceToNow } from 'date-fns';
 import {
   Bot, CheckCircle, Clock, AlertTriangle, PlayCircle,
   Pause, XCircle, ChevronRight, FileText, ShieldAlert,
-  Cpu, Users, RefreshCw, Megaphone, Server, Loader2,
+  Cpu, Users, RefreshCw, Megaphone, Server, Loader2, HeartPulse,
 } from 'lucide-react';
 
 const STATUS_CONFIG: Record<string, { dot: string; badge: string; icon: React.ReactElement; label: string }> = {
@@ -98,6 +98,7 @@ export default function Dashboard() {
   const [proposals, setProposals] = useState<any[]>([]);
   const [incidents, setIncidents] = useState<any[]>([]);
   const [healthInfo, setHealthInfo] = useState<any>(null);
+  const [healthSummary, setHealthSummary] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [broadcastOpen, setBroadcastOpen] = useState(false);
@@ -105,16 +106,18 @@ export default function Dashboard() {
   const [broadcasting, setBroadcasting] = useState(false);
 
   const fetchData = useCallback(async () => {
-    const [a, p, i, h] = await Promise.allSettled([
+    const [a, p, i, h, hs] = await Promise.allSettled([
       getAgents(),
       getProposals(),
       getIncidents(),
       getHealth(),
+      getHealthChecksSummary(),
     ]);
     if (a.status === 'fulfilled') setAgents(a.value);
     if (p.status === 'fulfilled') setProposals(p.value);
     if (i.status === 'fulfilled') setIncidents(i.value);
     if (h.status === 'fulfilled') setHealthInfo(h.value);
+    if (hs.status === 'fulfilled') setHealthSummary(hs.value);
     setLoading(false);
   }, []);
 
@@ -153,6 +156,21 @@ export default function Dashboard() {
     const eff = getEffectiveStatus(a);
     return eff === 'RUNNING' || eff === 'working';
   });
+
+  // Health summary counts
+  const healthAgents = healthSummary ? Object.keys(healthSummary) : [];
+  const healthyCount = healthAgents.filter(id => {
+    const checks = Object.values(healthSummary[id] as Record<string, any>);
+    return checks.length > 0 && checks.every((c: any) => c.status === 'OK');
+  }).length;
+  const healthWarningCount = healthAgents.filter(id => {
+    const checks = Object.values(healthSummary[id] as Record<string, any>);
+    return checks.some((c: any) => c.status === 'WARNING') && !checks.some((c: any) => c.status === 'ERROR');
+  }).length;
+  const healthErrorCount = healthAgents.filter(id => {
+    const checks = Object.values(healthSummary[id] as Record<string, any>);
+    return checks.some((c: any) => c.status === 'ERROR');
+  }).length;
 
   return (
     <div className="space-y-5">
@@ -215,11 +233,11 @@ export default function Dashboard() {
 
       {/* Summary Cards */}
       {loading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <SkeletonCard /><SkeletonCard /><SkeletonCard />
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <SkeletonCard /><SkeletonCard /><SkeletonCard /><SkeletonCard />
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 bg-gradient-to-br from-white to-blue-50/30">
             <div className="flex items-center justify-between">
               <h3 className="text-gray-500 text-sm font-medium">Active Agents</h3>
@@ -258,6 +276,45 @@ export default function Dashboard() {
             <p className="mt-1 text-xs text-gray-400">
               {openIncidents.length > 0 ? 'Action required →' : 'All systems green ✓'}
             </p>
+          </Link>
+
+          <Link to="/health-checks" className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 hover:border-rose-300 hover:shadow-md transition-all group bg-gradient-to-br from-white to-rose-50/20">
+            <div className="flex items-center justify-between">
+              <h3 className="text-gray-500 text-sm font-medium">System Health</h3>
+              <HeartPulse className="w-4 h-4 text-gray-400 group-hover:text-rose-500 transition-colors" />
+            </div>
+            {healthSummary === null ? (
+              <div className="mt-2 text-sm text-gray-400">No data yet</div>
+            ) : (
+              <>
+                <div className="mt-2 flex items-center gap-2 flex-wrap">
+                  {healthyCount > 0 && (
+                    <span className="flex items-center gap-1 text-xs text-green-700">
+                      <span className="w-2 h-2 rounded-full bg-green-500 inline-block" />
+                      {healthyCount} healthy
+                    </span>
+                  )}
+                  {healthWarningCount > 0 && (
+                    <span className="flex items-center gap-1 text-xs text-yellow-700">
+                      <span className="w-2 h-2 rounded-full bg-yellow-400 inline-block" />
+                      {healthWarningCount} warn
+                    </span>
+                  )}
+                  {healthErrorCount > 0 && (
+                    <span className="flex items-center gap-1 text-xs text-red-700">
+                      <span className="w-2 h-2 rounded-full bg-red-500 inline-block" />
+                      {healthErrorCount} error
+                    </span>
+                  )}
+                  {healthAgents.length === 0 && (
+                    <span className="text-xs text-gray-400">No checks yet</span>
+                  )}
+                </div>
+                <p className="mt-1 text-xs text-gray-400">
+                  {healthErrorCount > 0 ? 'Issues detected →' : healthWarningCount > 0 ? 'Warnings present →' : healthAgents.length > 0 ? 'All checks green ✓' : 'Click to view →'}
+                </p>
+              </>
+            )}
           </Link>
         </div>
       )}

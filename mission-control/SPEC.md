@@ -91,6 +91,53 @@ GET  /api/chatroom/messages   获取会议室动态（支持 long-polling 或 SS
 POST /api/proposals       提交议案
 POST /api/proposals/:id/approve 审批议案 (David/Icy)
 POST /api/incidents/:id/revive 触发自检/复活机制
+
+# Agent 健康检查 (v0.5.1)
+POST /api/health-checks               上报单条健康检查结果
+GET  /api/health-checks               获取检查记录 (可过滤: ?agent_id=&status=&check_type=)
+GET  /api/health-checks/summary       每个 Agent × 每种检查类型的最新状态聚合
+POST /api/health-checks/:id/resolve   将某条检查记录标记为已解决
+```
+
+## 6. Agent 健康检查模块 (v0.5.1)
+
+专为 Imax 及所有 Agent 常见故障设计的系统化健康监控。
+
+### 6.1 检查类型 (check_type)
+
+| 类型 | 说明 | 常见问题 |
+|---|---|---|
+| `gateway_status` | 本地或远端 API Gateway 可达性 | Gateway 进程未启动、端口占用 |
+| `model_api` | 模型 API 调用是否正常 | Provider 故障、余额耗尽、Rate Limit |
+| `session_health` | Agent 当前会话/上下文是否健康 | 会话卡死、Context 溢出 |
+| `vpn_routing` | VPN 路由连通性（主要针对 Imax 的 NordVPN） | VPN 断线、路由表异常 |
+| `heartbeat_stale` | Agent 心跳是否新鲜 | Agent 进程挂起、heartbeat 超时 |
+
+### 6.2 状态值 (status)
+
+| 值 | 含义 |
+|---|---|
+| `OK` | 正常 |
+| `WARNING` | 异常但不致命，需关注 |
+| `ERROR` | 故障，需立即处理 |
+| `UNKNOWN` | 尚未检查或数据缺失 |
+
+### 6.3 批量上报（随 POST /api/agents 一起）
+
+在调用 `POST /api/agents` 时，可以附带 `health` 字段，批量写入多条检查结果：
+
+```json
+{
+  "agent_id": "Imax",
+  "status": "RUNNING",
+  "health": {
+    "gateway_status":  { "status": "OK",      "detail": "Gateway 8765 responding" },
+    "model_api":       { "status": "WARNING",  "detail": "Rate limit hit, retrying" },
+    "vpn_routing":     { "status": "ERROR",    "detail": "NordVPN disconnected" },
+    "session_health":  { "status": "OK" },
+    "heartbeat_stale": { "status": "OK" }
+  }
+}
 ```
 
 ## 5. 阶段实施计划
