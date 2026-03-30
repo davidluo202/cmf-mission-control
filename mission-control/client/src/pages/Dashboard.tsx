@@ -1,11 +1,11 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { getAgents, getProposals, getIncidents, getHealth, getHealthChecksSummary, sendChatMessage } from '../api';
+import { getAgents, getProposals, getIncidents, getHealth, getHealthChecksSummary, sendChatMessage, getUnacknowledgedCount } from '../api';
 import { Link } from 'react-router-dom';
 import { formatDistanceToNow } from 'date-fns';
 import {
   Bot, CheckCircle, Clock, AlertTriangle, PlayCircle,
   Pause, XCircle, ChevronRight, FileText, ShieldAlert,
-  Cpu, Users, RefreshCw, Megaphone, Server, Loader2, HeartPulse,
+  Cpu, Users, RefreshCw, Megaphone, Server, Loader2, HeartPulse, Bell,
 } from 'lucide-react';
 
 const STATUS_CONFIG: Record<string, { dot: string; badge: string; icon: React.ReactElement; label: string }> = {
@@ -99,6 +99,7 @@ export default function Dashboard() {
   const [incidents, setIncidents] = useState<any[]>([]);
   const [healthInfo, setHealthInfo] = useState<any>(null);
   const [healthSummary, setHealthSummary] = useState<any>(null);
+  const [alertCounts, setAlertCounts] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [broadcastOpen, setBroadcastOpen] = useState(false);
@@ -106,18 +107,20 @@ export default function Dashboard() {
   const [broadcasting, setBroadcasting] = useState(false);
 
   const fetchData = useCallback(async () => {
-    const [a, p, i, h, hs] = await Promise.allSettled([
+    const [a, p, i, h, hs, ac] = await Promise.allSettled([
       getAgents(),
       getProposals(),
       getIncidents(),
       getHealth(),
       getHealthChecksSummary(),
+      getUnacknowledgedCount(),
     ]);
     if (a.status === 'fulfilled') setAgents(a.value);
     if (p.status === 'fulfilled') setProposals(p.value);
     if (i.status === 'fulfilled') setIncidents(i.value);
     if (h.status === 'fulfilled') setHealthInfo(h.value);
     if (hs.status === 'fulfilled') setHealthSummary(hs.value);
+    if (ac.status === 'fulfilled') setAlertCounts(ac.value);
     setLoading(false);
   }, []);
 
@@ -174,6 +177,20 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-5">
+      {/* CRITICAL alert banner */}
+      {alertCounts && alertCounts.critical > 0 && (
+        <Link
+          to="/alerts"
+          className="flex items-center gap-3 px-4 py-3 bg-red-600 text-white rounded-xl shadow-md hover:bg-red-700 transition-colors"
+        >
+          <Bell className="w-4 h-4 shrink-0 animate-pulse" />
+          <span className="font-semibold text-sm">
+            {alertCounts.critical} CRITICAL alert{alertCounts.critical > 1 ? 's' : ''} require immediate attention
+          </span>
+          <ChevronRight className="w-4 h-4 ml-auto shrink-0" />
+        </Link>
+      )}
+
       {/* Quick actions bar */}
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Overview</h2>
@@ -233,11 +250,11 @@ export default function Dashboard() {
 
       {/* Summary Cards */}
       {loading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <SkeletonCard /><SkeletonCard /><SkeletonCard /><SkeletonCard />
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+          <SkeletonCard /><SkeletonCard /><SkeletonCard /><SkeletonCard /><SkeletonCard />
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
           <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 bg-gradient-to-br from-white to-blue-50/30">
             <div className="flex items-center justify-between">
               <h3 className="text-gray-500 text-sm font-medium">Active Agents</h3>
@@ -313,6 +330,42 @@ export default function Dashboard() {
                 <p className="mt-1 text-xs text-gray-400">
                   {healthErrorCount > 0 ? 'Issues detected →' : healthWarningCount > 0 ? 'Warnings present →' : healthAgents.length > 0 ? 'All checks green ✓' : 'Click to view →'}
                 </p>
+              </>
+            )}
+          </Link>
+
+          {/* Active Alerts card */}
+          <Link to="/alerts" className={`bg-white p-5 rounded-xl shadow-sm border hover:shadow-md transition-all group bg-gradient-to-br from-white to-orange-50/20 ${alertCounts && alertCounts.critical > 0 ? 'border-red-300 hover:border-red-400' : 'border-gray-200 hover:border-orange-300'}`}>
+            <div className="flex items-center justify-between">
+              <h3 className="text-gray-500 text-sm font-medium">Active Alerts</h3>
+              <Bell className={`w-4 h-4 transition-colors ${alertCounts && alertCounts.critical > 0 ? 'text-red-500 animate-pulse' : 'text-gray-400 group-hover:text-orange-500'}`} />
+            </div>
+            {alertCounts === null ? (
+              <div className="mt-2 text-sm text-gray-400">Loading...</div>
+            ) : alertCounts.total === 0 ? (
+              <>
+                <div className="mt-2 text-3xl font-bold text-gray-900">0</div>
+                <p className="mt-1 text-xs text-gray-400">All clear ✓</p>
+              </>
+            ) : (
+              <>
+                <div className={`mt-2 text-3xl font-bold ${alertCounts.critical > 0 ? 'text-red-600' : alertCounts.warning > 0 ? 'text-yellow-600' : 'text-gray-900'}`}>
+                  {alertCounts.total}
+                </div>
+                <div className="mt-1 flex items-center gap-2 flex-wrap">
+                  {alertCounts.critical > 0 && (
+                    <span className="flex items-center gap-1 text-xs text-red-700">
+                      <span className="w-2 h-2 rounded-full bg-red-500 inline-block" />
+                      {alertCounts.critical} critical
+                    </span>
+                  )}
+                  {alertCounts.warning > 0 && (
+                    <span className="flex items-center gap-1 text-xs text-yellow-700">
+                      <span className="w-2 h-2 rounded-full bg-yellow-400 inline-block" />
+                      {alertCounts.warning} warn
+                    </span>
+                  )}
+                </div>
               </>
             )}
           </Link>

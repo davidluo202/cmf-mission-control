@@ -42,3 +42,13 @@ export const getHealthChecksSummary = () =>
   api.get('/health-checks/summary').then(r => r.data.summary);
 export const postHealthCheck        = (payload: any) => api.post('/health-checks', payload);
 export const resolveHealthCheck     = (id: string) => api.post(`/health-checks/${id}/resolve`);
+
+// ─── Alerts ──────────────────────────────────────────────────────────────────
+export const getAlerts = (params?: { severity?: string; target?: string; acknowledged?: string; agent_id?: string }) =>
+  api.get('/alerts', { params }).then(r => r.data.alerts);
+export const getUnacknowledgedCount = () =>
+  api.get('/alerts/unacknowledged').then(r => r.data);
+export const acknowledgeAlert = (id: string, acknowledged_by = 'David') =>
+  api.post(`/alerts/${id}/acknowledge`, { acknowledged_by });
+export const acknowledgeAllAlerts = (acknowledged_by = 'David') =>
+  api.post('/alerts/acknowledge-all', { acknowledged_by });

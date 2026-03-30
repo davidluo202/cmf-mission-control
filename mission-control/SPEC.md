@@ -144,3 +144,104 @@ POST /api/health-checks/:id/resolve   将某条检查记录标记为已解决
 1. **后端 (Server)**: 用 Express + SQLite 落地上面的 4 类 API。
 2. **前端 (Dashboard)**: 用 React/Vue 写 5 个控制面板。
 3. **集成**: 让各个 Agent 在本地拦截错误并向 `/api/events` 发送告警，以及将日常状态同步到 `/api/agents`。
+
+---
+
+## 7. Agent Reporting Protocol (v0.5.2)
+
+Every agent **MUST** proactively report to Mission Control. MC is now a **bidirectional** system:
+- Agents → MC: status, health, events
+- MC → Agents: displays real-time data, alerts, escalations
+- MC → David/Icy: automatic alerts when agents go stale or health checks fail
+
+### 7.1 Mandatory Heartbeat (every 15 minutes minimum)
+
+Every agent MUST call `POST /api/agents` at least once every **15 minutes**.
+If no report is received within **30 minutes**, the agent is marked STALE and a WARNING alert is issued.
+If no report is received within **2 hours**, the agent is marked OFFLINE and a CRITICAL alert is escalated.
+
+```bash
+# Minimum heartbeat — status + current task
+curl -X POST https://<MC_HOST>/api/agents \
+  -H "x-api-token: cmf-mc-token-2026" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_id": "Nova",
+    "status": "RUNNING",
+    "current_task": "Working on account_opening_app backend",
+    "progress_pct": 65
+  }'
+```
+
+### 7.2 Health Check Reporting (every 30 minutes minimum)
+
+Agents SHOULD report health checks at least every **30 minutes**. Health checks older than **1 hour** are automatically marked UNKNOWN by the monitoring loop.
+
+```bash
+# Report a single health check
+curl -X POST https://<MC_HOST>/api/health-checks \
+  -H "x-api-token: cmf-mc-token-2026" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_id": "Imax",
+    "check_type": "gateway_status",
+    "status": "OK",
+    "detail": "Gateway port 8765 responding"
+  }'
+```
+
+#### Health check types per agent
+
+| Agent | Required checks |
+|---|---|
+| All agents | `session_health` |
+| Physical machine agents (Imax, Nas, Binghome) | `gateway_status`, `vpn_routing` |
+| All agents with API access | `model_api` |
+
+Valid `check_type` values: `gateway_status`, `model_api`, `session_health`, `vpn_routing`, `heartbeat_stale`
+Valid `status` values: `OK`, `WARNING`, `ERROR`, `UNKNOWN`
+
+### 7.3 Bulk Report (status + health in one call)
+
+The recommended approach — report status and all health checks in a single `POST /api/agents` call:
+
+```bash
+curl -X POST https://<MC_HOST>/api/agents \
+  -H "x-api-token: cmf-mc-token-2026" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_id": "Imax",
+    "status": "RUNNING",
+    "current_task": "Infrastructure monitoring",
+    "progress_pct": 70,
+    "model": "claude-sonnet-4-6",
+    "health": {
+      "gateway_status":  { "status": "OK",      "detail": "Gateway 8765 responding" },
+      "model_api":       { "status": "OK",       "detail": "API calls succeeding" },
+      "vpn_routing":     { "status": "WARNING",  "detail": "NordVPN latency elevated" },
+      "session_health":  { "status": "OK" }
+    }
+  }'
+```
+
+### 7.4 Escalation Rules (automatic — server-side)
+
+The monitoring loop runs every **5 minutes** and automatically:
+
+| Condition | Action | Alert Severity | Target |
+|---|---|---|---|
+| Agent `updated_at` > 30 min | Log `agent_stale` event | WARNING | ICY |
+| Agent `updated_at` > 2 hours | Set status = OFFLINE, open incident | CRITICAL | ICY + DAVID |
+| Health check ERROR > 30 min | Escalate | WARNING | ICY |
+| Health check ERROR > 1 hour | Escalate | CRITICAL | DAVID |
+| 2+ agents OFFLINE simultaneously | Infrastructure alert | CRITICAL | DAVID |
+| Health check not updated > 1 hour | Auto-mark UNKNOWN | — | — |
+
+### 7.5 Alert API
+
+```
+GET  /api/alerts                    List alerts (?severity=&target=&acknowledged=&agent_id=)
+GET  /api/alerts/unacknowledged     Quick count by severity {total, critical, warning, info}
+POST /api/alerts/:id/acknowledge    Mark alert as acknowledged {acknowledged_by}
+POST /api/alerts/acknowledge-all    Bulk acknowledge all pending {acknowledged_by}
+```

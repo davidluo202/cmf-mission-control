@@ -1,8 +1,8 @@
 /**
  * Mission Control Server - Canton Financial AI Team
- * Phase 2: REST API + SQLite (Agent States, ChatRoom, Proposals, Incidents)
+ * Phase 2: REST API + SQLite (Agent States, ChatRoom, Proposals, Incidents, Alerts)
  * Author: Nova (CMF Lead Developer)
- * Version: 0.5.1 | 2026-03-30
+ * Version: 0.5.2 | 2026-03-30
  */
 
 const express = require('express');
@@ -45,6 +45,19 @@ const migrations = [
     detail TEXT,
     auto_resolved INTEGER DEFAULT 0
   )`,
+  // v0.5.2: alerts table
+  `CREATE TABLE IF NOT EXISTS alerts (
+    id TEXT PRIMARY KEY,
+    timestamp TEXT,
+    severity TEXT,
+    target TEXT,
+    agent_id TEXT,
+    alert_type TEXT,
+    message TEXT,
+    acknowledged INTEGER DEFAULT 0,
+    acknowledged_by TEXT,
+    acknowledged_at TEXT
+  )`,
 ];
 for (const sql of migrations) {
   try { db.exec(sql); } catch (e) { /* column already exists — safe to ignore */ }
@@ -62,7 +75,7 @@ db.exec(`
     needs_owner TEXT,
     updated_at TEXT DEFAULT (datetime('now'))
   );
-  
+
   CREATE TABLE IF NOT EXISTS events (
     id TEXT PRIMARY KEY,
     agent_id TEXT,
@@ -122,7 +135,7 @@ app.get('/health', (req, res) => {
   const uptimeSec = Math.floor((Date.now() - SERVER_START_TIME) / 1000);
   res.json({
     service: 'CMF Mission Control Server',
-    version: '0.5.1',
+    version: '0.5.2',
     status: 'running',
     uptime_sec: uptimeSec,
     started_at: new Date(SERVER_START_TIME).toISOString(),
@@ -180,9 +193,9 @@ app.post('/api/agents', auth, (req, res) => {
     const ts = new Date().toISOString();
     for (const [check_type, val] of Object.entries(health)) {
       if (!VALID_TYPES.includes(check_type)) continue;
-      const checkStatus = (val as any)?.status;
+      const checkStatus = val?.status;
       if (!checkStatus || !VALID_STATUSES.includes(checkStatus)) continue;
-      const detail = (val as any)?.detail || null;
+      const detail = val?.detail || null;
       const id = 'hc_' + uuidv4().substring(0, 8);
       stmt.run(id, agent_id, ts, check_type, checkStatus, detail);
     }
@@ -421,6 +434,210 @@ app.post('/api/admin/seed-defaults', auth, (req, res) => {
   }
 })();
 
+// ─── Alert Helpers ───────────────────────────────────────────────────────────
+
+/**
+ * Create an alert only if no unacknowledged alert of the same type exists for this agent.
+ * Returns the new alert id, or null if a duplicate was found.
+ */
+function createAlertIfNew(agentId, alertType, severity, target, message) {
+  const existing = db.prepare(
+    'SELECT id FROM alerts WHERE agent_id = ? AND alert_type = ? AND acknowledged = 0'
+  ).get(agentId, alertType);
+  if (existing) return null;
+
+  const id = 'alrt_' + uuidv4().substring(0, 8);
+  db.prepare(`
+    INSERT INTO alerts (id, timestamp, severity, target, agent_id, alert_type, message, acknowledged)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+  `).run(id, new Date().toISOString(), severity, target, agentId, alertType, message);
+  console.log(`[Monitor] Alert [${severity}] ${agentId} — ${alertType}: ${message}`);
+  return id;
+}
+
+// ─── Alert API Endpoints ─────────────────────────────────────────────────────
+
+// GET /api/alerts — list alerts (filterable by severity, target, acknowledged, agent_id)
+app.get('/api/alerts', auth, (req, res) => {
+  const { severity, target, acknowledged, agent_id, limit = 100 } = req.query;
+  let sql = 'SELECT * FROM alerts WHERE 1=1';
+  const params = [];
+  if (severity)   { sql += ' AND severity = ?';   params.push(severity); }
+  if (target)     { sql += ' AND target = ?';     params.push(target); }
+  if (agent_id)   { sql += ' AND agent_id = ?';   params.push(agent_id); }
+  if (acknowledged !== undefined) {
+    sql += ' AND acknowledged = ?';
+    params.push(acknowledged === 'true' || acknowledged === '1' ? 1 : 0);
+  }
+  sql += ' ORDER BY timestamp DESC LIMIT ?';
+  params.push(parseInt(limit));
+  const rows = db.prepare(sql).all(...params);
+  res.json({ alerts: rows });
+});
+
+// GET /api/alerts/unacknowledged — quick count breakdown by severity
+app.get('/api/alerts/unacknowledged', auth, (req, res) => {
+  const total    = db.prepare('SELECT COUNT(*) as c FROM alerts WHERE acknowledged = 0').get().c;
+  const critical = db.prepare('SELECT COUNT(*) as c FROM alerts WHERE acknowledged = 0 AND severity = ?').get('CRITICAL').c;
+  const warning  = db.prepare('SELECT COUNT(*) as c FROM alerts WHERE acknowledged = 0 AND severity = ?').get('WARNING').c;
+  const info     = db.prepare('SELECT COUNT(*) as c FROM alerts WHERE acknowledged = 0 AND severity = ?').get('INFO').c;
+  res.json({ total, critical, warning, info });
+});
+
+// POST /api/alerts/:id/acknowledge — mark an alert as acknowledged
+app.post('/api/alerts/:id/acknowledge', auth, (req, res) => {
+  const { acknowledged_by } = req.body || {};
+  const alert = db.prepare('SELECT * FROM alerts WHERE id = ?').get(req.params.id);
+  if (!alert) return res.status(404).json({ error: 'Alert not found' });
+  db.prepare(`
+    UPDATE alerts SET acknowledged = 1, acknowledged_by = ?, acknowledged_at = ? WHERE id = ?
+  `).run(acknowledged_by || 'David', new Date().toISOString(), req.params.id);
+  res.json({ ok: true });
+});
+
+// POST /api/alerts/acknowledge-all — acknowledge all unacknowledged alerts
+app.post('/api/alerts/acknowledge-all', auth, (req, res) => {
+  const { acknowledged_by } = req.body || {};
+  const ts = new Date().toISOString();
+  const result = db.prepare(`
+    UPDATE alerts SET acknowledged = 1, acknowledged_by = ?, acknowledged_at = ? WHERE acknowledged = 0
+  `).run(acknowledged_by || 'David', ts);
+  res.json({ ok: true, count: result.changes });
+});
+
+// ─── Proactive Monitoring Loop ───────────────────────────────────────────────
+
+const MONITOR_INTERVAL_MS      = 5  * 60 * 1000; // run every 5 minutes
+const STALE_WARNING_MS         = 30 * 60 * 1000; // 30 min → WARNING / STALE
+const STALE_OFFLINE_MS         = 2  * 60 * 60 * 1000; // 2 h → OFFLINE
+const HEALTH_STALE_MS          = 1  * 60 * 60 * 1000; // 1 h → mark UNKNOWN
+const HEALTH_ERROR_WARNING_MS  = 30 * 60 * 1000; // ERROR 30 min → WARNING alert
+const HEALTH_ERROR_CRITICAL_MS = 1  * 60 * 60 * 1000; // ERROR 1 h → CRITICAL alert
+
+function msToHumanShort(ms) {
+  const h = Math.floor(ms / 3600000);
+  const m = Math.floor((ms % 3600000) / 60000);
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
+function normalizeTs(ts) {
+  if (!ts) return 0;
+  return new Date(ts.endsWith('Z') ? ts : ts + 'Z').getTime();
+}
+
+function runMonitoringLoop() {
+  const now = Date.now();
+  console.log(`[Monitor] Proactive check at ${new Date().toISOString()}`);
+
+  try {
+    // ── 1. Agent Staleness Detection ─────────────────────────────────────
+    const agents = db.prepare('SELECT * FROM agent_status').all();
+    let offlineCount = 0;
+
+    for (const agent of agents) {
+      const ageMs = now - normalizeTs(agent.updated_at);
+
+      if (ageMs > STALE_OFFLINE_MS) {
+        offlineCount++;
+
+        // Transition to OFFLINE if not already set
+        if (agent.status !== 'OFFLINE') {
+          db.prepare(`UPDATE agent_status SET status = 'OFFLINE' WHERE agent_id = ?`).run(agent.agent_id);
+
+          // Log event
+          db.prepare(`INSERT INTO events (id, agent_id, timestamp, type, priority, summary)
+            VALUES (?, ?, ?, 'agent_offline', 'high', ?)`
+          ).run(uuidv4(), agent.agent_id, new Date().toISOString(),
+            `${agent.agent_id} marked OFFLINE — no heartbeat for ${msToHumanShort(ageMs)}`);
+
+          // Open incident (deduplicated)
+          const existingInc = db.prepare(
+            `SELECT id FROM incidents WHERE agent_id = ? AND reason_code = 'HEARTBEAT_STALE' AND status = 'OPEN'`
+          ).get(agent.agent_id);
+          if (!existingInc) {
+            const incId = 'inc_' + uuidv4().substring(0, 8);
+            db.prepare(`INSERT INTO incidents (id, agent_id, timestamp, reason_code, human_message, next_action, status)
+              VALUES (?, ?, ?, 'HEARTBEAT_STALE', ?, 'Investigate agent and restore heartbeat', 'OPEN')`
+            ).run(incId, agent.agent_id, new Date().toISOString(),
+              `${agent.agent_id} offline — no heartbeat for ${msToHumanShort(ageMs)}`);
+          }
+        }
+
+        createAlertIfNew(agent.agent_id, 'agent_offline', 'CRITICAL', 'ALL',
+          `${agent.agent_id} has been OFFLINE for ${msToHumanShort(ageMs)} — no heartbeat received`);
+
+      } else if (ageMs > STALE_WARNING_MS) {
+        // Log stale event only if status was not already WARNING/OFFLINE
+        if (agent.status !== 'OFFLINE' && agent.status !== 'WARNING') {
+          db.prepare(`INSERT INTO events (id, agent_id, timestamp, type, priority, summary)
+            VALUES (?, ?, ?, 'agent_stale', 'normal', ?)`
+          ).run(uuidv4(), agent.agent_id, new Date().toISOString(),
+            `${agent.agent_id} heartbeat stale — last seen ${msToHumanShort(ageMs)} ago`);
+        }
+
+        createAlertIfNew(agent.agent_id, 'agent_stale', 'WARNING', 'ICY',
+          `${agent.agent_id} heartbeat stale — last seen ${msToHumanShort(ageMs)} ago`);
+      }
+    }
+
+    // Multiple agents offline → escalate to DAVID
+    if (offlineCount >= 2) {
+      createAlertIfNew('SYSTEM', 'multiple_agents_offline', 'CRITICAL', 'DAVID',
+        `${offlineCount} agents are currently OFFLINE — possible infrastructure issue`);
+    }
+
+    // ── 2. Health Check Staleness ──────────────────────────────────────────
+    const latestChecks = db.prepare(`
+      SELECT h.*
+      FROM health_checks h
+      INNER JOIN (
+        SELECT agent_id, check_type, MAX(timestamp) as max_ts
+        FROM health_checks
+        GROUP BY agent_id, check_type
+      ) latest ON h.agent_id = latest.agent_id
+                  AND h.check_type = latest.check_type
+                  AND h.timestamp = latest.max_ts
+    `).all();
+
+    for (const check of latestChecks) {
+      const checkAgeMs = now - normalizeTs(check.timestamp);
+
+      // Mark stale checks as UNKNOWN
+      if (checkAgeMs > HEALTH_STALE_MS && check.status !== 'UNKNOWN') {
+        db.prepare(`UPDATE health_checks SET status = 'UNKNOWN' WHERE id = ?`).run(check.id);
+      }
+
+      // Escalate persistent ERROR checks
+      if (check.status === 'ERROR') {
+        if (checkAgeMs > HEALTH_ERROR_CRITICAL_MS) {
+          createAlertIfNew(
+            check.agent_id,
+            `health_critical_${check.check_type}`,
+            'CRITICAL', 'DAVID',
+            `${check.agent_id} ${check.check_type} has been ERROR for ${msToHumanShort(checkAgeMs)} — immediate action needed`
+          );
+        } else if (checkAgeMs > HEALTH_ERROR_WARNING_MS) {
+          createAlertIfNew(
+            check.agent_id,
+            `health_error_${check.check_type}`,
+            'WARNING', 'ICY',
+            `${check.agent_id} ${check.check_type} is in ERROR state for ${msToHumanShort(checkAgeMs)}`
+          );
+        }
+      }
+    }
+
+    console.log(`[Monitor] Done — ${agents.length} agents, ${latestChecks.length} health checks reviewed`);
+  } catch (e) {
+    console.error('[Monitor] Error:', e.message);
+  }
+}
+
+// Run immediately on startup, then every 5 minutes
+runMonitoringLoop();
+setInterval(runMonitoringLoop, MONITOR_INTERVAL_MS);
+
 // Serve frontend static files (client/dist)
 // Railway: client-dist/ is bundled inside server dir (copied at build time)
 const clientDist = fs.existsSync(path.join(__dirname, 'client-dist'))
@@ -453,39 +670,30 @@ if (fs.existsSync(clientDist)) {
   console.warn(`   Frontend dist NOT found at: ${clientDist}`);
 }
 
-// ─── Built-in Keepalive: refresh updated_at for all known agents every 15 min ───
-// This prevents agents from going OFFLINE on the dashboard simply because they
-// are event-driven (not continuously running). A real agent that is truly down
-// will eventually stop pushing status updates and will be superseded by this keepalive
-// only if it still has a record in the DB. Agents that push real heartbeats will
-// always override this with their own updated_at.
-const KEEPALIVE_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
-
-function runKeepalive() {
+// ─── Server Startup Event ────────────────────────────────────────────────────
+(function logStartupEvent() {
   try {
-    const agents = db.prepare(`SELECT agent_id, status FROM agent_status`).all();
-    if (agents.length === 0) return;
-    const stmt = db.prepare(`UPDATE agent_status SET updated_at = datetime('now') WHERE agent_id = ? AND status != 'ERROR'`);
-    let count = 0;
-    for (const a of agents) {
-      // Don't keepalive ERROR agents — they should stay red until manually fixed
-      if (a.status !== 'ERROR') {
-        stmt.run(a.agent_id);
-        count++;
+    db.prepare(`INSERT INTO events (id, agent_id, timestamp, type, priority, summary)
+      VALUES (?, 'SYSTEM', ?, 'system_startup', 'normal', ?)`
+    ).run(uuidv4(), new Date().toISOString(), 'Mission Control v0.5.2 started');
+
+    // Immediately alert on any agent already offline at startup
+    const agents = db.prepare('SELECT * FROM agent_status').all();
+    const now = Date.now();
+    for (const agent of agents) {
+      const ageMs = now - normalizeTs(agent.updated_at);
+      if (ageMs > STALE_OFFLINE_MS) {
+        createAlertIfNew(agent.agent_id, 'agent_offline', 'CRITICAL', 'ALL',
+          `${agent.agent_id} was OFFLINE at server startup — no heartbeat for ${msToHumanShort(ageMs)}`);
       }
     }
-    if (count > 0) console.log(`[Keepalive] Refreshed updated_at for ${count} agents`);
   } catch (e) {
-    console.warn('[Keepalive] Error:', e.message);
+    console.warn('[Startup] Could not log startup event:', e.message);
   }
-}
-
-// Run immediately on startup, then every 15 min
-runKeepalive();
-setInterval(runKeepalive, KEEPALIVE_INTERVAL_MS);
+})();
 
 // Start
 app.listen(PORT, process.env.BIND_HOST || '0.0.0.0', () => {
-  console.log(`✅ Mission Control Server v0.5.1 running on port ${PORT}`);
+  console.log(`✅ Mission Control Server v0.5.2 running on port ${PORT}`);
   console.log(`   Health: http://localhost:${PORT}/`);
 });

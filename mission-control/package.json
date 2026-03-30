@@ -1,6 +1,6 @@
 {
   "name": "cmf-mission-control",
-  "version": "0.3.0",
+  "version": "0.5.2",
   "description": "CMF Mission Control - Agent Coordination Dashboard",
   "main": "server/index.js",
   "scripts": {
