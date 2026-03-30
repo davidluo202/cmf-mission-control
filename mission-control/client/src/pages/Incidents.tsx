@@ -17,7 +17,7 @@ const REASON_COLORS: Record<string, string> = {
   TIMEOUT:           'bg-gray-100 text-gray-800 border-gray-200',
 };
 
-const KNOWN_AGENTS = ['Nova', 'Qual', 'Icy', 'Imax', 'Nas'];
+const KNOWN_AGENTS = ['Nova', 'Qual', 'Icy', 'Imax', 'Nas', 'Binghome'];
 const KNOWN_REASONS = ['RATE_LIMIT', 'BILLING_EXHAUSTED', 'AUTH_FAILED', 'BUILD_FAILED', 'SERVICE_DOWN', 'BLOCKED', 'TIMEOUT', 'OTHER'];
 
 function NewIncidentForm({ onCreated }: { onCreated: () => void }) {

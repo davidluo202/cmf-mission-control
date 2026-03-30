@@ -23,8 +23,7 @@ export default function Login({ onLogin }: { onLogin: (token: string) => void })
     try {
       const res = await api.post('/auth/login', { password });
       if (res.data?.ok) {
-        sessionStorage.setItem('mc_authed', '1');
-        sessionStorage.setItem('mc_token', res.data.token);
+        localStorage.setItem('mc_token', res.data.token);
         onLogin(res.data.token);
         return;
       }

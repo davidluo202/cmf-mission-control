@@ -2,7 +2,7 @@
  * Mission Control Server - Canton Financial AI Team
  * Phase 2: REST API + SQLite (Agent States, ChatRoom, Proposals, Incidents)
  * Author: Nova (CMF Lead Developer)
- * Version: 0.4.0 | 2026-03-29
+ * Version: 0.5.0 | 2026-03-30
  */
 
 const express = require('express');
@@ -14,6 +14,7 @@ const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 8765;
+const SERVER_START_TIME = Date.now();
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const API_TOKEN = process.env.API_TOKEN || 'cmf-mc-token-2026';
 // Dashboard UI password (set via env var in Railway/production)
@@ -108,15 +109,22 @@ function auth(req, res, next) {
 }
 
 app.get('/health', (req, res) => {
+  const uptimeSec = Math.floor((Date.now() - SERVER_START_TIME) / 1000);
   res.json({
     service: 'CMF Mission Control Server',
-    version: '0.3.0',
-    status: 'running'
+    version: '0.5.0',
+    status: 'running',
+    uptime_sec: uptimeSec,
+    started_at: new Date(SERVER_START_TIME).toISOString(),
   });
 });
 
-// POST /api/auth/login — Auth disabled (bypass mode)
+// POST /api/auth/login — plain string comparison (internal tool, no bcrypt needed)
 app.post('/api/auth/login', (req, res) => {
+  const { password } = req.body || {};
+  if (!password || password !== DASHBOARD_PASSWORD) {
+    return res.status(401).json({ ok: false, error: 'Invalid password' });
+  }
   res.json({ ok: true, token: API_TOKEN });
 });
 
@@ -202,6 +210,12 @@ app.post('/api/chatroom/messages', auth, (req, res) => {
   res.json({ ok: true, id });
 });
 
+// DELETE /api/chatroom/messages (clear all chat — admin only)
+app.delete('/api/chatroom/messages', auth, (req, res) => {
+  db.prepare('DELETE FROM chat_messages').run();
+  res.json({ ok: true });
+});
+
 // POST /api/proposals (提交提案)
 app.post('/api/proposals', auth, (req, res) => {
   const { author, title, decision_level, impact, cost, reason } = req.body;
@@ -263,11 +277,12 @@ app.post('/api/admin/seed-defaults', auth, (req, res) => {
   if (count > 0) return res.json({ ok: true, seeded: 0, message: 'Agents already exist, skipping seed' });
 
   const defaults = [
-    { agent_id: 'Nova',  status: 'RUNNING', current_task: 'CMF system development & maintenance',    progress_pct: 75 },
-    { agent_id: 'Qual',  status: 'RUNNING', current_task: 'QA testing for all CMF projects',         progress_pct: 60 },
-    { agent_id: 'Icy',   status: 'RUNNING', current_task: 'Team coordination & project management',  progress_pct: 60 },
-    { agent_id: 'Imax',  status: 'RUNNING', current_task: 'Infrastructure deployment & monitoring',  progress_pct: 60 },
-    { agent_id: 'Nas',   status: 'RUNNING', current_task: 'Research & data support',                 progress_pct: 80 },
+    { agent_id: 'Nova',     status: 'RUNNING', current_task: 'CMF system development & maintenance',    progress_pct: 75 },
+    { agent_id: 'Qual',     status: 'RUNNING', current_task: 'QA testing for all CMF projects',         progress_pct: 60 },
+    { agent_id: 'Icy',      status: 'RUNNING', current_task: 'Team coordination & project management',  progress_pct: 60 },
+    { agent_id: 'Imax',     status: 'RUNNING', current_task: 'Infrastructure deployment & monitoring',  progress_pct: 60 },
+    { agent_id: 'Nas',      status: 'RUNNING', current_task: 'Research & data support',                 progress_pct: 80 },
+    { agent_id: 'Binghome', status: 'IDLE',    current_task: 'Home automation assistant',               progress_pct: 0  },
   ];
   const stmt = db.prepare(`
     INSERT OR IGNORE INTO agent_status (agent_id, timestamp, status, current_task, progress_pct, updated_at)
@@ -284,11 +299,12 @@ app.post('/api/admin/seed-defaults', auth, (req, res) => {
   const count = db.prepare('SELECT COUNT(*) as c FROM agent_status').get().c;
   if (count === 0) {
     const defaults = [
-      { agent_id: 'Nova',  status: 'RUNNING', current_task: 'CMF system development & maintenance',    progress_pct: 75 },
-      { agent_id: 'Qual',  status: 'RUNNING', current_task: 'QA testing for all CMF projects',         progress_pct: 60 },
-      { agent_id: 'Icy',   status: 'RUNNING', current_task: 'Team coordination & project management',  progress_pct: 60 },
-      { agent_id: 'Imax',  status: 'RUNNING', current_task: 'Infrastructure deployment & monitoring',  progress_pct: 60 },
-      { agent_id: 'Nas',   status: 'RUNNING', current_task: 'Research & data support',                 progress_pct: 80 },
+      { agent_id: 'Nova',     status: 'RUNNING', current_task: 'CMF system development & maintenance',    progress_pct: 75 },
+      { agent_id: 'Qual',     status: 'RUNNING', current_task: 'QA testing for all CMF projects',         progress_pct: 60 },
+      { agent_id: 'Icy',      status: 'RUNNING', current_task: 'Team coordination & project management',  progress_pct: 60 },
+      { agent_id: 'Imax',     status: 'RUNNING', current_task: 'Infrastructure deployment & monitoring',  progress_pct: 60 },
+      { agent_id: 'Nas',      status: 'RUNNING', current_task: 'Research & data support',                 progress_pct: 80 },
+      { agent_id: 'Binghome', status: 'IDLE',    current_task: 'Home automation assistant',               progress_pct: 0  },
     ];
     const stmt = db.prepare(`
       INSERT OR IGNORE INTO agent_status (agent_id, timestamp, status, current_task, progress_pct, updated_at)
@@ -297,7 +313,7 @@ app.post('/api/admin/seed-defaults', auth, (req, res) => {
     for (const a of defaults) {
       stmt.run(a.agent_id, new Date().toISOString(), a.status, a.current_task, a.progress_pct);
     }
-    console.log('   Auto-seeded 5 default agents (DB was empty after cold deploy)');
+    console.log('   Auto-seeded 6 default agents (DB was empty after cold deploy)');
   }
 })();
 
@@ -366,6 +382,6 @@ setInterval(runKeepalive, KEEPALIVE_INTERVAL_MS);
 
 // Start
 app.listen(PORT, process.env.BIND_HOST || '0.0.0.0', () => {
-  console.log(`✅ Mission Control Server v0.3.3 running on port ${PORT}`);
+  console.log(`✅ Mission Control Server v0.5.0 running on port ${PORT}`);
   console.log(`   Health: http://localhost:${PORT}/`);
 });
