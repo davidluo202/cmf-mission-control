@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { getAlerts, acknowledgeAlert, acknowledgeAllAlerts } from '../api';
 import { formatDistanceToNow } from 'date-fns';
 import {
-  Bell, BellOff, AlertTriangle, XCircle, Info, RefreshCw, Check, CheckCheck,
+  BellOff, AlertTriangle, XCircle, Info, RefreshCw, Check, CheckCheck,
 } from 'lucide-react';
 
 const SEVERITY_CONFIG: Record<string, { badge: string; iconClass: string; icon: React.ReactElement; border: string }> = {
