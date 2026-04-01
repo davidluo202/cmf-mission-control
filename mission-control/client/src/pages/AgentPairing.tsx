@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { getAgents, assignPartners, getPartners } from '../api';
 import { Users, Link, CheckCircle, XCircle, RefreshCw } from 'lucide-react';
 
