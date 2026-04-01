@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, MessageSquare, AlertTriangle, FileText,
-  Activity, Menu, X, LogOut, HeartPulse, Bell, XCircle,
+  Activity, Menu, X, LogOut, HeartPulse, Bell, XCircle, Users,
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import Dashboard from './pages/Dashboard';
@@ -13,6 +13,7 @@ import Incidents from './pages/Incidents';
 import HealthChecks from './pages/HealthChecks';
 import Alerts from './pages/Alerts';
 import Login from './pages/Login';
+import AgentPairing from './pages/AgentPairing';
 import { getUnacknowledgedCount, getAlerts } from './api';
 
 function Sidebar({
@@ -32,6 +33,7 @@ function Sidebar({
     { to: '/proposals',     icon: <FileText        className="w-5 h-5 mr-3" />, label: 'Proposals' },
     { to: '/incidents',     icon: <AlertTriangle   className="w-5 h-5 mr-3" />, label: 'Incidents' },
     { to: '/health-checks', icon: <HeartPulse      className="w-5 h-5 mr-3" />, label: 'Health' },
+    { to: '/agent-pairing', icon: <Users          className="w-5 h-5 mr-3" />, label: 'Pairing' },
     {
       to: '/alerts',
       icon: (
@@ -105,7 +107,7 @@ function Sidebar({
         </nav>
 
         <div className="px-3 py-3 border-t border-white/10">
-          <p className="text-center text-xs text-gray-500">Nova • Mission Control v0.5.2</p>
+          <p className="text-center text-xs text-gray-500">Nova • Mission Control v0.6.0</p>
         </div>
       </aside>
     </>
@@ -263,7 +265,7 @@ function App() {
                 <h2 className="text-sm lg:text-base font-semibold text-gray-800 leading-tight truncate">
                   Canton Financial AI Team
                 </h2>
-                <p className="text-xs text-gray-400 hidden sm:block">Mission Control v0.5.2</p>
+                <p className="text-xs text-gray-400 hidden sm:block">Mission Control v0.6.0</p>
               </div>
             </div>
 
@@ -311,12 +313,13 @@ function App() {
               <Route path="/proposals"     element={<Proposals />} />
               <Route path="/incidents"     element={<Incidents />} />
               <Route path="/health-checks" element={<HealthChecks />} />
+              <Route path="/agent-pairing" element={<AgentPairing />} />
               <Route path="/alerts"        element={<Alerts />} />
             </Routes>
           </div>
 
           <footer className="shrink-0 h-8 bg-white border-t border-gray-100 flex items-center justify-center">
-            <p className="text-xs text-gray-400">Nova • Mission Control v0.5.2 · Canton Financial AI Team</p>
+            <p className="text-xs text-gray-400">Nova • Mission Control v0.6.0 · Canton Financial AI Team</p>
           </footer>
         </main>
       </div>

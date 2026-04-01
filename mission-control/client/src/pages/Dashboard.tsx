@@ -448,6 +448,11 @@ export default function Dashboard() {
                   <div className="flex-1 min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-sm font-semibold text-gray-900 capitalize">{agent.agent_id}</span>
+                      {agent.partner_status_emoji && (
+                        <span className="text-lg" title={`状态: ${agent.partner_status_emoji}`}>
+                          {agent.partner_status_emoji}
+                        </span>
+                      )}
                       <span className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full border font-medium ${cfg.badge}`}>
                         {cfg.icon}
                         {cfg.label}

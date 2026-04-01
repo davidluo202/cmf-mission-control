@@ -2,7 +2,7 @@
  * Mission Control Server - Canton Financial AI Team
  * Phase 2: REST API + SQLite (Agent States, ChatRoom, Proposals, Incidents, Alerts)
  * Author: Nova (CMF Lead Developer)
- * Version: 0.5.2 | 2026-03-30
+ * Version: 0.6.0 | 2026-04-01
  */
 
 const express = require('express');
@@ -35,15 +35,18 @@ const migrations = [
   `ALTER TABLE agent_status ADD COLUMN last_task_at TEXT`,
   `ALTER TABLE agent_status ADD COLUMN needs_support_from TEXT`,
   `ALTER TABLE agent_status ADD COLUMN offline_reason TEXT`,
-  // v0.5.1: health_checks table (CREATE IF NOT EXISTS — safe to run multiple times)
-  `CREATE TABLE IF NOT EXISTS health_checks (
+  `ALTER TABLE agent_status ADD COLUMN partner_agent_id TEXT`,
+  `ALTER TABLE agent_status ADD COLUMN partner_status_emoji TEXT`,
+  `ALTER TABLE agent_status ADD COLUMN last_emoji_update TEXT`,
+  // v0.6.0: rescue_mechanism
+  `CREATE TABLE IF NOT EXISTS rescue_tasks (
     id TEXT PRIMARY KEY,
-    agent_id TEXT,
+    requester_agent TEXT,
+    target_agent TEXT,
     timestamp TEXT,
-    check_type TEXT,
     status TEXT,
-    detail TEXT,
-    auto_resolved INTEGER DEFAULT 0
+    rescue_type TEXT,
+    result TEXT
   )`,
   // v0.5.2: alerts table
   `CREATE TABLE IF NOT EXISTS alerts (
@@ -163,14 +166,16 @@ app.post('/api/agents', auth, (req, res) => {
     agent_id, status, current_task, progress_pct, reason_code, needs_owner,
     model, model_usage, last_task, last_task_at, needs_support_from, offline_reason,
     health, // optional: { gateway_status: {status, detail}, model_api: {...}, ... }
+    partner_agent_id, partner_status_emoji, // v0.6.0: 互助配对 + emoji 状态
   } = req.body;
   if (!agent_id || !status) return res.status(400).json({ error: 'agent_id and status required' });
 
   db.prepare(`
     INSERT OR REPLACE INTO agent_status
       (agent_id, timestamp, status, current_task, progress_pct, reason_code, needs_owner,
-       model, model_usage, last_task, last_task_at, needs_support_from, offline_reason, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+       model, model_usage, last_task, last_task_at, needs_support_from, offline_reason,
+       partner_agent_id, partner_status_emoji, last_emoji_update, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
   `).run(
     agent_id, new Date().toISOString(), status,
     current_task || null, progress_pct || 0,
@@ -179,7 +184,10 @@ app.post('/api/agents', auth, (req, res) => {
     model_usage ? JSON.stringify(model_usage) : null,
     last_task || null, last_task_at || null,
     needs_support_from || null,
-    offline_reason || null
+    offline_reason || null,
+    partner_agent_id || null,
+    partner_status_emoji || null,
+    partner_status_emoji ? new Date().toISOString() : null
   );
 
   // Bulk-upsert health checks if provided
@@ -388,25 +396,126 @@ app.post('/api/agents/:id/heartbeat', auth, (req, res) => {
   res.json({ ok: true });
 });
 
+// ─── v0.6.0: Rescue / Mutual Aid Endpoints ───────────────────────────────────
+
+// POST /api/rescue/request — Agent requests help from partner
+app.post('/api/rescue/request', auth, (req, res) => {
+  const { requester_agent, target_agent, rescue_type } = req.body;
+  if (!requester_agent || !target_agent || !rescue_type) {
+    return res.status(400).json({ error: 'requester_agent, target_agent, and rescue_type required' });
+  }
+  // rescue_type: 'PATROL_CHECK', 'TROUBLE_SHOOT', 'BACKUP_TASK', 'HEALTH_CHECK'
+  const id = 'rescue_' + uuidv4().substring(0, 8);
+  db.prepare(`
+    INSERT INTO rescue_tasks (id, requester_agent, target_agent, timestamp, status, rescue_type, result)
+    VALUES (?, ?, ?, ?, 'PENDING', ?, NULL)
+  `).run(id, requester_agent, target_agent, new Date().toISOString(), rescue_type);
+  
+  // Log event
+  db.prepare(`INSERT INTO events (id, agent_id, timestamp, type, priority, summary, target_agent)
+    VALUES (?, ?, ?, 'rescue_requested', 'normal', ?, ?)`
+  ).run(uuidv4(), requester_agent, new Date().toISOString(),
+    `${requester_agent} requested ${rescue_type} from ${target_agent}`, target_agent);
+  
+  res.json({ ok: true, id });
+});
+
+// GET /api/rescue/tasks — Get rescue tasks (filter by status, agent)
+app.get('/api/rescue/tasks', auth, (req, res) => {
+  const { status, agent_id, limit = 50 } = req.query;
+  let sql = 'SELECT * FROM rescue_tasks WHERE 1=1';
+  const params = [];
+  if (status) { sql += ' AND status = ?'; params.push(status); }
+  if (agent_id) { sql += ' AND (requester_agent = ? OR target_agent = ?)'; params.push(agent_id, agent_id); }
+  sql += ' ORDER BY timestamp DESC LIMIT ?';
+  params.push(parseInt(limit));
+  const rows = db.prepare(sql).all(...params);
+  res.json({ rescue_tasks: rows });
+});
+
+// POST /api/rescue/respond — Partner responds to rescue request
+app.post('/api/rescue/respond', auth, (req, res) => {
+  const { task_id, response, result } = req.body;
+  if (!task_id || !response) {
+    return res.status(400).json({ error: 'task_id and response required' });
+  }
+  // response: 'ACCEPTED', 'REJECTED', 'COMPLETED'
+  const task = db.prepare('SELECT * FROM rescue_tasks WHERE id = ?').get(task_id);
+  if (!task) return res.status(404).json({ error: 'Rescue task not found' });
+  
+  const newStatus = response === 'COMPLETED' ? 'COMPLETED' : (response === 'REJECTED' ? 'REJECTED' : 'IN_PROGRESS');
+  db.prepare(`UPDATE rescue_tasks SET status = ?, result = ? WHERE id = ?`)
+    .run(newStatus, result || null, task_id);
+  
+  // Log event
+  db.prepare(`INSERT INTO events (id, agent_id, timestamp, type, priority, summary, target_agent)
+    VALUES (?, ?, ?, 'rescue_response', 'normal', ?, ?)`
+  ).run(uuidv4(), task.target_agent, new Date().toISOString(),
+    `${task.target_agent} responded to rescue request: ${response}`, task.requester_agent);
+  
+  res.json({ ok: true });
+});
+
+// GET /api/rescue/partners — Get each agent's assigned partner
+app.get('/api/rescue/partners', auth, (req, res) => {
+  const agents = db.prepare('SELECT agent_id, partner_agent_id FROM agent_status WHERE partner_agent_id IS NOT NULL').all();
+  res.json({ partners: agents });
+});
+
+// POST /api/rescue/assign — David/Icy assigns partner pairs
+app.post('/api/rescue/assign', auth, (req, res) => {
+  const { agent_a, agent_b } = req.body;
+  if (!agent_a || !agent_b) return res.status(400).json({ error: 'agent_a and agent_b required' });
+  
+  db.prepare('UPDATE agent_status SET partner_agent_id = ? WHERE agent_id = ?').run(agent_b, agent_a);
+  db.prepare('UPDATE agent_status SET partner_agent_id = ? WHERE agent_id = ?').run(agent_a, agent_b);
+  
+  res.json({ ok: true, message: `${agent_a} ↔ ${agent_b} paired for mutual aid` });
+});
+
+// POST /api/agents/emoji — Update agent's emoji status (received from Telegram/command)
+app.post('/api/agents/emoji', auth, (req, res) => {
+  const { agent_id, emoji } = req.body;
+  if (!agent_id || !emoji) return res.status(400).json({ error: 'agent_id and emoji required' });
+  
+  // Valid emoji: 👀, 🧠, 🪏, ☕️, ✅, 🛑
+  const VALID_EMOJIS = ['👀', '🧠', '🪏', '☕️', '✅', '🛑'];
+  if (!VALID_EMOJIS.includes(emoji)) {
+    return res.status(400).json({ error: `Invalid emoji. Valid: ${VALID_EMOJIS.join(', ')}` });
+  }
+  
+  db.prepare('UPDATE agent_status SET partner_status_emoji = ?, last_emoji_update = datetime(\'now\') WHERE agent_id = ?')
+    .run(emoji, agent_id);
+  
+  res.json({ ok: true });
+});
+
+// GET /api/agents/emoji/:agent_id — Get agent's current emoji status
+app.get('/api/agents/emoji/:agent_id', auth, (req, res) => {
+  const agent = db.prepare('SELECT agent_id, partner_status_emoji, last_emoji_update FROM agent_status WHERE agent_id = ?').get(req.params.agent_id);
+  if (!agent) return res.status(404).json({ error: 'Agent not found' });
+  res.json(agent);
+});
+
 // POST /api/admin/seed-defaults — Re-seed default agents if DB is empty (safe to call on restart)
 app.post('/api/admin/seed-defaults', auth, (req, res) => {
   const count = db.prepare('SELECT COUNT(*) as c FROM agent_status').get().c;
   if (count > 0) return res.json({ ok: true, seeded: 0, message: 'Agents already exist, skipping seed' });
 
   const defaults = [
-    { agent_id: 'Nova',     status: 'RUNNING', current_task: 'CMF system development & maintenance',    progress_pct: 75 },
-    { agent_id: 'Qual',     status: 'RUNNING', current_task: 'QA testing for all CMF projects',         progress_pct: 60 },
-    { agent_id: 'Icy',      status: 'RUNNING', current_task: 'Team coordination & project management',  progress_pct: 60 },
-    { agent_id: 'Imax',     status: 'RUNNING', current_task: 'Infrastructure deployment & monitoring',  progress_pct: 60 },
-    { agent_id: 'Nas',      status: 'RUNNING', current_task: 'Research & data support',                 progress_pct: 80 },
-    { agent_id: 'Binghome', status: 'IDLE',    current_task: 'Home automation assistant',               progress_pct: 0  },
+    { agent_id: 'Nova',     status: 'RUNNING', current_task: 'CMF system development & maintenance',    progress_pct: 75, partner_agent_id: 'Qual' },
+    { agent_id: 'Qual',     status: 'RUNNING', current_task: 'QA testing for all CMF projects',         progress_pct: 60, partner_agent_id: 'Nova' },
+    { agent_id: 'Icy',      status: 'RUNNING', current_task: 'Team coordination & project management',  progress_pct: 60, partner_agent_id: 'Imax' },
+    { agent_id: 'Imax',     status: 'RUNNING', current_task: 'Infrastructure deployment & monitoring',  progress_pct: 60, partner_agent_id: 'Icy' },
+    { agent_id: 'Nas',      status: 'RUNNING', current_task: 'Research & data support',                 progress_pct: 80, partner_agent_id: 'Binghome' },
+    { agent_id: 'Binghome', status: 'IDLE',    current_task: 'Home automation assistant',               progress_pct: 0,  partner_agent_id: 'Nas' },
   ];
   const stmt = db.prepare(`
-    INSERT OR IGNORE INTO agent_status (agent_id, timestamp, status, current_task, progress_pct, updated_at)
-    VALUES (?, ?, ?, ?, ?, datetime('now'))
+    INSERT OR IGNORE INTO agent_status (agent_id, timestamp, status, current_task, progress_pct, partner_agent_id, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
   `);
   for (const a of defaults) {
-    stmt.run(a.agent_id, new Date().toISOString(), a.status, a.current_task, a.progress_pct);
+    stmt.run(a.agent_id, new Date().toISOString(), a.status, a.current_task, a.progress_pct, a.partner_agent_id);
   }
   res.json({ ok: true, seeded: defaults.length });
 });
@@ -416,21 +525,21 @@ app.post('/api/admin/seed-defaults', auth, (req, res) => {
   const count = db.prepare('SELECT COUNT(*) as c FROM agent_status').get().c;
   if (count === 0) {
     const defaults = [
-      { agent_id: 'Nova',     status: 'RUNNING', current_task: 'CMF system development & maintenance',    progress_pct: 75 },
-      { agent_id: 'Qual',     status: 'RUNNING', current_task: 'QA testing for all CMF projects',         progress_pct: 60 },
-      { agent_id: 'Icy',      status: 'RUNNING', current_task: 'Team coordination & project management',  progress_pct: 60 },
-      { agent_id: 'Imax',     status: 'RUNNING', current_task: 'Infrastructure deployment & monitoring',  progress_pct: 60 },
-      { agent_id: 'Nas',      status: 'RUNNING', current_task: 'Research & data support',                 progress_pct: 80 },
-      { agent_id: 'Binghome', status: 'IDLE',    current_task: 'Home automation assistant',               progress_pct: 0  },
+      { agent_id: 'Nova',     status: 'RUNNING', current_task: 'CMF system development & maintenance',    progress_pct: 75, partner_agent_id: 'Qual' },
+      { agent_id: 'Qual',     status: 'RUNNING', current_task: 'QA testing for all CMF projects',         progress_pct: 60, partner_agent_id: 'Nova' },
+      { agent_id: 'Icy',      status: 'RUNNING', current_task: 'Team coordination & project management',  progress_pct: 60, partner_agent_id: 'Imax' },
+      { agent_id: 'Imax',     status: 'RUNNING', current_task: 'Infrastructure deployment & monitoring',  progress_pct: 60, partner_agent_id: 'Icy' },
+      { agent_id: 'Nas',      status: 'RUNNING', current_task: 'Research & data support',                 progress_pct: 80, partner_agent_id: 'Binghome' },
+      { agent_id: 'Binghome', status: 'IDLE',    current_task: 'Home automation assistant',               progress_pct: 0,  partner_agent_id: 'Nas' },
     ];
     const stmt = db.prepare(`
-      INSERT OR IGNORE INTO agent_status (agent_id, timestamp, status, current_task, progress_pct, updated_at)
-      VALUES (?, ?, ?, ?, ?, datetime('now'))
+      INSERT OR IGNORE INTO agent_status (agent_id, timestamp, status, current_task, progress_pct, partner_agent_id, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
     `);
     for (const a of defaults) {
-      stmt.run(a.agent_id, new Date().toISOString(), a.status, a.current_task, a.progress_pct);
+      stmt.run(a.agent_id, new Date().toISOString(), a.status, a.current_task, a.progress_pct, a.partner_agent_id);
     }
-    console.log('   Auto-seeded 6 default agents (DB was empty after cold deploy)');
+    console.log('   Auto-seeded 6 default agents with partner pairs (DB was empty after cold deploy)');
   }
 })();
 

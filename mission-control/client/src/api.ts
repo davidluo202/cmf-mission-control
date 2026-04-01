@@ -52,3 +52,20 @@ export const acknowledgeAlert = (id: string, acknowledged_by = 'David') =>
   api.post(`/alerts/${id}/acknowledge`, { acknowledged_by });
 export const acknowledgeAllAlerts = (acknowledged_by = 'David') =>
   api.post('/alerts/acknowledge-all', { acknowledged_by });
+
+// ─── v0.6.0: Rescue / Mutual Aid ────────────────────────────────────────────
+export const getRescueTasks = (params?: { status?: string; agent_id?: string }) =>
+  api.get('/rescue/tasks', { params }).then(r => r.data.rescue_tasks);
+export const requestRescue = (payload: { requester_agent: string; target_agent: string; rescue_type: string }) =>
+  api.post('/rescue/request', payload);
+export const respondRescue = (payload: { task_id: string; response: string; result?: string }) =>
+  api.post('/rescue/respond', payload);
+export const assignPartners = (payload: { agent_a: string; agent_b: string }) =>
+  api.post('/rescue/assign', payload);
+export const getPartners = () => api.get('/rescue/partners').then(r => r.data.partners);
+
+// ─── v0.6.0: Emoji Status ──────────────────────────────────────────────────
+export const setAgentEmoji = (payload: { agent_id: string; emoji: string }) =>
+  api.post('/agents/emoji', payload);
+export const getAgentEmoji = (agent_id: string) =>
+  api.get(`/agents/emoji/${agent_id}`).then(r => r.data);
