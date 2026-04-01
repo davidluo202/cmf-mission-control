@@ -480,7 +480,7 @@ export default function Dashboard() {
                         {agent.model}
                         {agent.token_remaining !== undefined && agent.token_limit !== undefined && (
                           <span className="ml-2 text-gray-400">
-                            {agent.token_remaining.toLocaleString()}/{agent.token_limit.toLocaleString()} tokens
+                            {Number(agent.token_remaining).toLocaleString()}/{Number(agent.token_limit).toLocaleString()} tokens
                           </span>
                         )}
                       </p>
@@ -495,14 +495,14 @@ export default function Dashboard() {
                       </p>
                     )}
                     {/* System stats: CPU/Mem/Disk/Network */}
-                    {(agent.cpu_usage !== null || agent.memory_usage !== null) && !isOffline && (
+                    {(agent.cpu_usage !== undefined && agent.cpu_usage !== null) || (agent.memory_usage !== undefined && agent.memory_usage !== null) ? (
                       <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-2">
-                        {agent.cpu_usage !== null && <span>CPU: {agent.cpu_usage.toFixed(1)}%</span>}
-                        {agent.memory_usage !== null && <span>Mem: {agent.memory_usage.toFixed(1)}%</span>}
-                        {agent.disk_usage !== null && <span>Disk: {agent.disk_usage.toFixed(1)}%</span>}
+                        {agent.cpu_usage !== undefined && agent.cpu_usage !== null && <span>CPU: {Number(agent.cpu_usage).toFixed(1)}%</span>}
+                        {agent.memory_usage !== undefined && agent.memory_usage !== null && <span>Mem: {Number(agent.memory_usage).toFixed(1)}%</span>}
+                        {agent.disk_usage !== undefined && agent.disk_usage !== null && <span>Disk: {Number(agent.disk_usage).toFixed(1)}%</span>}
                         {agent.network_status && <span>Net: {agent.network_status}</span>}
                       </p>
-                    )}
+                    ) : null}
                     {agent.reason_code && !isOffline && (
                       <p className="text-xs text-orange-600 font-mono mt-0.5">⚠ {agent.reason_code}</p>
                     )}
