@@ -8,10 +8,26 @@
 curl -s -X POST https://cmf-mission-control-production.up.railway.app/api/agents \
   -H "Content-Type: application/json" \
   -H "x-api-token: cmf-mc-token-2026" \
-  -d '{"agent_id":"Nova","status":"RUNNING","current_task":"CMF system development & maintenance","progress_pct":70}'
+  -d '{"agent_id":"Nova","status":"RUNNING","current_task":"当前正在做的具体任务","progress_pct":70,"model":"anthropic/claude-opus-4-6"}'
 ```
 
-> Agent ID: `Nova` | 如有具体任务请更新 `current_task` 内容
+> Agent ID: `Nova` | **必须**根据实际情况更新 `current_task` 和 `status`
+> - `RUNNING` = 正在执行任务
+> - `ONLINE` = 空闲等待任务  
+> - `IDLE` = 阻塞/等待外部输入
+> - `ERROR` = 出错需要介入
+> - `OFFLINE` = 不可用
+
+## 📡 Telegram → ChatRoom 镜像同步（每次在群里发言后执行）
+
+每次在 Telegram 群「办公室与家的AI助理群」发言后，立即同步到 MC ChatRoom：
+
+```bash
+curl -s -X POST https://cmf-mission-control-production.up.railway.app/api/chatroom/messages \
+  -H "Content-Type: application/json" \
+  -H "x-api-token: cmf-mc-token-2026" \
+  -d '{"sender":"Nova","content":"[Mirror] 你刚才发的内容","topic":"General"}'
+```
 
 ---
 
