@@ -245,3 +245,57 @@ GET  /api/alerts/unacknowledged     Quick count by severity {total, critical, wa
 POST /api/alerts/:id/acknowledge    Mark alert as acknowledged {acknowledged_by}
 POST /api/alerts/acknowledge-all    Bulk acknowledge all pending {acknowledged_by}
 ```
+
+---
+
+## 8. Real-Time Status Reporting (v0.6.1)
+
+All agents MUST report their real-time status to MC every heartbeat (at least every 15 minutes).
+
+### 8.1 Required Fields
+
+| Field | Type | Description | Example |
+|-------|------|-------------|---------|
+| `agent_id` | string | Unique agent identifier | "Nova" |
+| `status` | string | RUNNING/IDLE/BLOCKED/ERROR/OFFLINE | "RUNNING" |
+| `current_task` | string | What the agent is currently doing | "MC v0.6.1开发" |
+| `progress_pct` | integer | 0-100 progress | 75 |
+| `model` | string | Current model being used | "claude-opus-4-6" |
+| `token_remaining` | integer | Remaining API tokens | 850000 |
+| `token_limit` | integer | Total token quota | 1000000 |
+| `busy_status` | string | BUSY/IDLE/AWAY | "BUSY" |
+| `last_chatroom_at` | ISO timestamp | Last time in ChatRoom | "2026-04-01T15:30:00Z" |
+| `cpu_usage` | float | CPU usage % | 45.2 |
+| `memory_usage` | float | Memory usage % | 62.8 |
+| `disk_usage` | float | Disk usage % | 35.0 |
+| `network_status` | string | ONLINE/OFFLINE/SLOW | "ONLINE" |
+| `partner_status_emoji` | string | Emoji (👀🧠🪏☕️✅🛑) | "🧠" |
+
+### 8.2 Example
+
+```bash
+curl -X POST https://<MC_HOST>/api/agents \
+  -H "x-api-token: cmf-mc-token-2026" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_id": "Nova",
+    "status": "RUNNING",
+    "current_task": "MC v0.6.1开发",
+    "progress_pct": 80,
+    "model": "claude-opus-4-6",
+    "token_remaining": 850000,
+    "token_limit": 1000000,
+    "busy_status": "BUSY",
+    "cpu_usage": 45.2,
+    "memory_usage": 62.8,
+    "network_status": "ONLINE",
+    "partner_status_emoji": "🧠"
+  }'
+```
+
+### 8.3 SLA
+
+- **Heartbeat**: Every 15 min
+- **Stale**: >30 min → WARNING
+- **Offline**: >2 hours → OFFLINE
+- **Token alert**: <20% remaining → WARNING

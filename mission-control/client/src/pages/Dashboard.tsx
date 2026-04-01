@@ -478,6 +478,29 @@ export default function Dashboard() {
                       <p className="text-xs text-blue-400 mt-0.5 flex items-center gap-1">
                         <Cpu className="w-2.5 h-2.5" />
                         {agent.model}
+                        {agent.token_remaining !== undefined && agent.token_limit !== undefined && (
+                          <span className="ml-2 text-gray-400">
+                            {agent.token_remaining.toLocaleString()}/{agent.token_limit.toLocaleString()} tokens
+                          </span>
+                        )}
+                      </p>
+                    )}
+                    {agent.busy_status && !isOffline && (
+                      <p className="text-xs mt-0.5 flex items-center gap-1">
+                        <span className={`w-2 h-2 rounded-full ${
+                          agent.busy_status === 'BUSY' ? 'bg-red-500 animate-pulse' :
+                          agent.busy_status === 'IDLE' ? 'bg-gray-400' : 'bg-green-400'
+                        }`} />
+                        <span className="text-gray-500">状态: {agent.busy_status}</span>
+                      </p>
+                    )}
+                    {/* System stats: CPU/Mem/Disk/Network */}
+                    {(agent.cpu_usage !== null || agent.memory_usage !== null) && !isOffline && (
+                      <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-2">
+                        {agent.cpu_usage !== null && <span>CPU: {agent.cpu_usage.toFixed(1)}%</span>}
+                        {agent.memory_usage !== null && <span>Mem: {agent.memory_usage.toFixed(1)}%</span>}
+                        {agent.disk_usage !== null && <span>Disk: {agent.disk_usage.toFixed(1)}%</span>}
+                        {agent.network_status && <span>Net: {agent.network_status}</span>}
                       </p>
                     )}
                     {agent.reason_code && !isOffline && (

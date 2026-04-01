@@ -2,7 +2,7 @@
  * Mission Control Server - Canton Financial AI Team
  * Phase 2: REST API + SQLite (Agent States, ChatRoom, Proposals, Incidents, Alerts)
  * Author: Nova (CMF Lead Developer)
- * Version: 0.6.0 | 2026-04-01
+ * Version: 0.6.1 | 2026-04-01
  */
 
 const express = require('express');
@@ -38,6 +38,15 @@ const migrations = [
   `ALTER TABLE agent_status ADD COLUMN partner_agent_id TEXT`,
   `ALTER TABLE agent_status ADD COLUMN partner_status_emoji TEXT`,
   `ALTER TABLE agent_status ADD COLUMN last_emoji_update TEXT`,
+  // v0.6.1: real-time status reporting
+  `ALTER TABLE agent_status ADD COLUMN token_remaining INTEGER`,
+  `ALTER TABLE agent_status ADD COLUMN token_limit INTEGER`,
+  `ALTER TABLE agent_status ADD COLUMN busy_status TEXT`,
+  `ALTER TABLE agent_status ADD COLUMN last_chatroom_at TEXT`,
+  `ALTER TABLE agent_status ADD COLUMN cpu_usage REAL`,
+  `ALTER TABLE agent_status ADD COLUMN memory_usage REAL`,
+  `ALTER TABLE agent_status ADD COLUMN disk_usage REAL`,
+  `ALTER TABLE agent_status ADD COLUMN network_status TEXT`,
   // v0.6.0: rescue_mechanism
   `CREATE TABLE IF NOT EXISTS rescue_tasks (
     id TEXT PRIMARY KEY,
@@ -167,6 +176,9 @@ app.post('/api/agents', auth, (req, res) => {
     model, model_usage, last_task, last_task_at, needs_support_from, offline_reason,
     health, // optional: { gateway_status: {status, detail}, model_api: {...}, ... }
     partner_agent_id, partner_status_emoji, // v0.6.0: 互助配对 + emoji 状态
+    // v0.6.1: real-time status
+    token_remaining, token_limit, busy_status, last_chatroom_at,
+    cpu_usage, memory_usage, disk_usage, network_status,
   } = req.body;
   if (!agent_id || !status) return res.status(400).json({ error: 'agent_id and status required' });
 
@@ -174,8 +186,11 @@ app.post('/api/agents', auth, (req, res) => {
     INSERT OR REPLACE INTO agent_status
       (agent_id, timestamp, status, current_task, progress_pct, reason_code, needs_owner,
        model, model_usage, last_task, last_task_at, needs_support_from, offline_reason,
-       partner_agent_id, partner_status_emoji, last_emoji_update, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+       partner_agent_id, partner_status_emoji, last_emoji_update, 
+       token_remaining, token_limit, busy_status, last_chatroom_at,
+       cpu_usage, memory_usage, disk_usage, network_status,
+       updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
   `).run(
     agent_id, new Date().toISOString(), status,
     current_task || null, progress_pct || 0,
@@ -187,7 +202,15 @@ app.post('/api/agents', auth, (req, res) => {
     offline_reason || null,
     partner_agent_id || null,
     partner_status_emoji || null,
-    partner_status_emoji ? new Date().toISOString() : null
+    partner_status_emoji ? new Date().toISOString() : null,
+    token_remaining || null,
+    token_limit || null,
+    busy_status || null,
+    last_chatroom_at || null,
+    cpu_usage || null,
+    memory_usage || null,
+    disk_usage || null,
+    network_status || null
   );
 
   // Bulk-upsert health checks if provided

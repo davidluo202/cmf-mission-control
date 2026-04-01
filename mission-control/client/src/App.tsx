@@ -107,7 +107,7 @@ function Sidebar({
         </nav>
 
         <div className="px-3 py-3 border-t border-white/10">
-          <p className="text-center text-xs text-gray-500">Nova • Mission Control v0.6.0</p>
+          <p className="text-center text-xs text-gray-500">Nova • Mission Control v0.6.1</p>
         </div>
       </aside>
     </>
@@ -265,7 +265,7 @@ function App() {
                 <h2 className="text-sm lg:text-base font-semibold text-gray-800 leading-tight truncate">
                   Canton Financial AI Team
                 </h2>
-                <p className="text-xs text-gray-400 hidden sm:block">Mission Control v0.6.0</p>
+                <p className="text-xs text-gray-400 hidden sm:block">Mission Control v0.6.1</p>
               </div>
             </div>
 
@@ -319,7 +319,7 @@ function App() {
           </div>
 
           <footer className="shrink-0 h-8 bg-white border-t border-gray-100 flex items-center justify-center">
-            <p className="text-xs text-gray-400">Nova • Mission Control v0.6.0 · Canton Financial AI Team</p>
+            <p className="text-xs text-gray-400">Nova • Mission Control v0.6.1 · Canton Financial AI Team</p>
           </footer>
         </main>
       </div>
