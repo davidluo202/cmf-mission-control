@@ -443,6 +443,32 @@ app.get('/api/decisions', auth, (req, res) => {
   res.json({ decisions: rows });
 });
 
+// Critical Alerts API
+app.get('/api/alerts', auth, (req, res) => {
+  const rows = db.prepare(
+    "SELECT * FROM events WHERE severity IN ('critical','error') ORDER BY created_at DESC LIMIT 50"
+  ).all();
+  res.json({ alerts: rows });
+});
+
+app.post('/api/alerts/dismiss', auth, (req, res) => {
+  db.prepare("DELETE FROM events WHERE severity IN ('critical','error')").run();
+  res.json({ ok: true });
+});
+
+// Auto Heartbeat - Mark agents as unresponsive if no heartbeat for 3 minutes
+setInterval(() => {
+  const threshold = new Date(Date.now() - 3 * 60 * 1000).toISOString();
+  const result = db.prepare(`
+    UPDATE agent_status SET status = 'unresponsive', updated_at = datetime('now')
+    WHERE status NOT IN ('idle', 'unresponsive')
+    AND last_heartbeat < ?
+  `).run(threshold);
+  if (result.changes > 0) {
+    console.log(`[Heartbeat] Marked ${result.changes} agents as unresponsive`);
+  }
+}, 60 * 1000); // Check every minute
+
 // ─── Start Server ─────────────────────────────────────────────────────────────
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`✅ CMF Mission Control Server v0.2.0`);

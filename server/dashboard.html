@@ -49,10 +49,12 @@
     /* Summary cards */
     .summary-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      grid-template-columns: repeat(3, 1fr);
       gap: 12px;
       margin-bottom: 24px;
+      max-width: 600px;
     }
+    @media (max-width: 600px) { .summary-grid { grid-template-columns: repeat(2, 1fr); } }
     .stat-card {
       background: var(--surface);
       border: 1px solid var(--border);
@@ -67,6 +69,18 @@
     .num.red { color: var(--red); }
     .num.blue { color: var(--accent); }
     .num.purple { color: var(--purple); }
+
+    .btn-dismiss {
+      margin-left: auto;
+      background: var(--border);
+      color: var(--text);
+      border: none;
+      padding: 4px 12px;
+      border-radius: 4px;
+      font-size: 11px;
+      cursor: pointer;
+    }
+    .btn-dismiss:hover { background: var(--red); }
 
     /* Two-column layout */
     .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
@@ -222,17 +236,7 @@
   <div id="error-banner">⚠️ 加载数据失败，请检查 API_TOKEN 环境变量或网络连接。</div>
 
   <!-- Summary Stats -->
-  <div class="summary-grid" id="summary-grid">
-    <div class="stat-card"><div class="num blue" id="s-total">—</div><div class="label">Total Agents</div></div>
-    <div class="stat-card"><div class="num green" id="s-working">—</div><div class="label">Working</div></div>
-    <div class="stat-card"><div class="num yellow" id="s-idle">—</div><div class="label">Idle</div></div>
-    <div class="stat-card"><div class="num red" id="s-blocked">—</div><div class="label">Blocked</div></div>
-    <div class="stat-card"><div class="num purple" id="s-approval">—</div><div class="label">需审批</div></div>
-    <div class="stat-card"><div class="num blue" id="s-tasks">—</div><div class="label">Active Tasks</div></div>
-    <div class="stat-card"><div class="num red" id="s-alerts">—</div><div class="label">Critical Alerts</div></div>
-  </div>
-
-  <!-- Agents + Events -->
+  <!-- Agents + Summary Stats -->
   <div class="grid-2">
     <div class="panel">
       <div class="panel-header">🤖 Agent 状态 <span class="badge" id="agent-count">0</span></div>
@@ -244,15 +248,33 @@
       </div>
     </div>
 
+    <div>
+      <div class="summary-grid" id="summary-grid">
+        <div class="stat-card"><div class="num green" id="s-working">—</div><div class="label">Working</div></div>
+        <div class="stat-card"><div class="num yellow" id="s-idle">—</div><div class="label">Idle</div></div>
+        <div class="stat-card"><div class="num blue" id="s-tasks">—</div><div class="label">Active Tasks</div></div>
+      </div>
+    </div>
+  </div>
+
+    <!-- Events + Decisions -->
+  <div class="grid-2">
     <div class="panel">
       <div class="panel-header">📡 最近事件 <span class="badge" id="events-count">0</span></div>
       <div class="panel-body">
         <ul class="event-list" id="events-list"><li class="empty">加载中…</li></ul>
       </div>
     </div>
+
+    <div class="panel">
+      <div class="panel-header">⚖️ 最近决策 <span class="badge" id="decisions-count">0</span></div>
+      <div class="panel-body" id="decisions-body">
+        <div class="empty">加载中…</div>
+      </div>
+    </div>
   </div>
 
-  <!-- Tasks + Decisions -->
+  <!-- Tasks -->
   <div class="grid-2">
     <div class="panel">
       <div class="panel-header">📋 活跃任务 <span class="badge" id="tasks-count">0</span></div>
@@ -271,7 +293,7 @@
 
   <!-- Critical Alerts full width -->
   <div class="panel panel-full" id="alerts-panel" style="display:none">
-    <div class="panel-header">🚨 Critical Alerts <span class="badge" id="alerts-count">0</span></div>
+    <div class="panel-header">🚨 Critical Alerts <span class="badge" id="alerts-count">0</span> <button class="btn-dismiss" onclick="dismissAlerts()">Dismiss All</button></div>
     <div class="panel-body">
       <table>
         <thead><tr><th>时间</th><th>Agent</th><th>摘要</th><th>严重度</th></tr></thead>
@@ -381,6 +403,14 @@
         </div>
         <div class="ts">${ts(d.created_at)}</div>
       </div>`).join('');
+  }
+
+  async function dismissAlerts() {
+    if (!confirm('Clear all critical alerts?')) return;
+    try {
+      await fetch(BASE + '/api/alerts/dismiss?token=' + TOKEN, { method: 'POST' });
+      refresh();
+    } catch(e) { console.error(e); }
   }
 
   function renderAlerts(alerts) {
