@@ -1,11 +1,11 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { getAgents, getProposals, getIncidents, getHealth, getHealthChecksSummary, sendChatMessage, getUnacknowledgedCount } from '../api';
+import { getAgents, getProposals, getIncidents, getHealth, getHealthChecksSummary, sendChatMessage, getUnacknowledgedCount, getProjects } from '../api';
 import { Link } from 'react-router-dom';
 import { formatDistanceToNow } from 'date-fns';
 import {
   Bot, CheckCircle, Clock, AlertTriangle, PlayCircle,
   Pause, XCircle, ChevronRight, FileText, ShieldAlert,
-  Cpu, Users, RefreshCw, Megaphone, Server, Loader2, HeartPulse, Bell,
+  Cpu, Users, RefreshCw, Megaphone, Server, Loader2, HeartPulse, Bell, FolderKanban,
 } from 'lucide-react';
 
 const STATUS_CONFIG: Record<string, { dot: string; badge: string; icon: React.ReactElement; label: string }> = {
@@ -93,6 +93,14 @@ function SkeletonAgentRow() {
   );
 }
 
+const PROJECT_STATUS_CONFIG: Record<string, { badge: string; dot: string; label: string }> = {
+  PLANNING:    { badge: 'bg-blue-100 text-blue-700 border-blue-200',   dot: 'bg-blue-400',   label: 'PLANNING' },
+  IN_PROGRESS: { badge: 'bg-green-100 text-green-700 border-green-200', dot: 'bg-green-500 animate-pulse', label: 'IN PROGRESS' },
+  BLOCKED:     { badge: 'bg-red-100 text-red-700 border-red-200',      dot: 'bg-red-500',    label: 'BLOCKED' },
+  COMPLETED:   { badge: 'bg-gray-100 text-gray-500 border-gray-200',   dot: 'bg-gray-400',   label: 'DONE' },
+  CANCELLED:   { badge: 'bg-gray-100 text-gray-400 border-gray-200',   dot: 'bg-gray-300',   label: 'CANCELLED' },
+};
+
 export default function Dashboard() {
   const [agents, setAgents] = useState<any[]>([]);
   const [proposals, setProposals] = useState<any[]>([]);
@@ -100,6 +108,7 @@ export default function Dashboard() {
   const [healthInfo, setHealthInfo] = useState<any>(null);
   const [healthSummary, setHealthSummary] = useState<any>(null);
   const [alertCounts, setAlertCounts] = useState<any>(null);
+  const [projects, setProjects] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [broadcastOpen, setBroadcastOpen] = useState(false);
@@ -107,13 +116,14 @@ export default function Dashboard() {
   const [broadcasting, setBroadcasting] = useState(false);
 
   const fetchData = useCallback(async () => {
-    const [a, p, i, h, hs, ac] = await Promise.allSettled([
+    const [a, p, i, h, hs, ac, pr] = await Promise.allSettled([
       getAgents(),
       getProposals(),
       getIncidents(),
       getHealth(),
       getHealthChecksSummary(),
       getUnacknowledgedCount(),
+      getProjects(),
     ]);
     if (a.status === 'fulfilled') setAgents(a.value);
     if (p.status === 'fulfilled') setProposals(p.value);
@@ -121,6 +131,7 @@ export default function Dashboard() {
     if (h.status === 'fulfilled') setHealthInfo(h.value);
     if (hs.status === 'fulfilled') setHealthSummary(hs.value);
     if (ac.status === 'fulfilled') setAlertCounts(ac.value);
+    if (pr.status === 'fulfilled') setProjects(pr.value);
     setLoading(false);
   }, []);
 
@@ -540,6 +551,80 @@ export default function Dashboard() {
                     <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-gray-500 transition-colors" />
                   </div>
                 </Link>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Active Projects Panel */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
+          <h3 className="font-semibold text-gray-900 flex items-center gap-2 text-sm">
+            <FolderKanban className="w-4 h-4 text-purple-500" />
+            Active Projects
+            {projects.length > 0 && (
+              <span className="text-xs text-gray-400 font-normal">({projects.filter(p => p.status !== 'COMPLETED' && p.status !== 'CANCELLED').length} active)</span>
+            )}
+          </h3>
+        </div>
+        {loading ? (
+          <div className="divide-y divide-gray-100">
+            {[...Array(2)].map((_, i) => <SkeletonAgentRow key={i} />)}
+          </div>
+        ) : projects.filter(p => p.status !== 'COMPLETED' && p.status !== 'CANCELLED').length === 0 ? (
+          <div className="p-8 text-center text-gray-400">
+            <FolderKanban className="w-8 h-8 mx-auto mb-2 opacity-20" />
+            <p className="text-sm text-gray-500">No active projects</p>
+            <p className="text-xs mt-1 text-gray-400">Projects created via API will appear here</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-gray-100">
+            {projects.filter(p => p.status !== 'COMPLETED' && p.status !== 'CANCELLED').map(project => {
+              const cfg = PROJECT_STATUS_CONFIG[project.status] || PROJECT_STATUS_CONFIG.PLANNING;
+              const owners: string[] = Array.isArray(project.owner_agents) ? project.owner_agents : [];
+              const updatedAt = project.updated_at
+                ? new Date(project.updated_at.endsWith('Z') ? project.updated_at : project.updated_at + 'Z')
+                : null;
+              return (
+                <div key={project.id} className="px-6 py-4 hover:bg-gray-50/60 transition-colors">
+                  <div className="flex items-start gap-3">
+                    <span className={`mt-1.5 w-2.5 h-2.5 rounded-full shrink-0 ${cfg.dot}`} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2 mb-1">
+                        <span className="text-sm font-semibold text-gray-900">{project.name}</span>
+                        <span className={`inline-flex items-center px-2 py-0.5 text-xs rounded-full border font-medium ${cfg.badge}`}>
+                          {cfg.label}
+                        </span>
+                        {project.priority === 'HIGH' && (
+                          <span className="px-2 py-0.5 text-xs bg-red-50 text-red-600 border border-red-200 rounded-full">HIGH</span>
+                        )}
+                        {owners.length > 0 && (
+                          <span className="flex items-center gap-1 text-xs text-gray-500">
+                            <Users className="w-3 h-3" />
+                            {owners.join(', ')}
+                          </span>
+                        )}
+                      </div>
+                      {project.description && (
+                        <p className="text-xs text-gray-500 mb-1 truncate">{project.description}</p>
+                      )}
+                      {project.latest_update && (
+                        <p className="text-xs text-blue-600 truncate">
+                          <span className="font-medium">{project.latest_update.agent_id || 'System'}:</span> {project.latest_update.content}
+                        </p>
+                      )}
+                      {project.next_action && (
+                        <p className="text-xs text-amber-600 mt-0.5">
+                          ▶ 下一步: {project.next_action}
+                        </p>
+                      )}
+                    </div>
+                    <div className="shrink-0 text-xs text-gray-400">
+                      {updatedAt ? formatDistanceToNow(updatedAt) + ' ago' : ''}
+                    </div>
+                  </div>
+                </div>
               );
             })}
           </div>

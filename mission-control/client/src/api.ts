@@ -69,3 +69,19 @@ export const setAgentEmoji = (payload: { agent_id: string; emoji: string }) =>
   api.post('/agents/emoji', payload);
 export const getAgentEmoji = (agent_id: string) =>
   api.get(`/agents/emoji/${agent_id}`).then(r => r.data);
+
+// ─── v0.7.0: Projects / Task Tracking ────────────────────────────────────
+export const getProjects = (status?: string) =>
+  api.get('/projects', { params: status ? { status } : undefined }).then(r => r.data.projects);
+export const createProject = (payload: {
+  name: string; description?: string; owner_agents?: string[];
+  status?: string; created_by?: string; next_action?: string; priority?: string;
+}) => api.post('/projects', payload);
+export const updateProject = (id: string, payload: Partial<{
+  name: string; description: string; owner_agents: string[];
+  status: string; next_action: string; priority: string;
+}>) => api.patch(`/projects/${id}`, payload);
+export const addProjectUpdate = (id: string, payload: { agent_id?: string; content: string; new_status?: string }) =>
+  api.post(`/projects/${id}/updates`, payload);
+export const getProjectUpdates = (id: string, limit = 20) =>
+  api.get(`/projects/${id}/updates`, { params: { limit } }).then(r => r.data.updates);

@@ -70,6 +70,27 @@ const migrations = [
     acknowledged_by TEXT,
     acknowledged_at TEXT
   )`,
+  // v0.7.0: projects / task tracking
+  `CREATE TABLE IF NOT EXISTS projects (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT,
+    owner_agents TEXT,
+    status TEXT DEFAULT 'PLANNING',
+    created_by TEXT,
+    created_at TEXT,
+    updated_at TEXT DEFAULT (datetime('now')),
+    next_action TEXT,
+    priority TEXT DEFAULT 'MEDIUM'
+  )`,
+  `CREATE TABLE IF NOT EXISTS project_updates (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    agent_id TEXT,
+    timestamp TEXT,
+    content TEXT,
+    new_status TEXT
+  )`,
 ];
 for (const sql of migrations) {
   try { db.exec(sql); } catch (e) { /* column already exists — safe to ignore */ }
@@ -518,6 +539,99 @@ app.get('/api/agents/emoji/:agent_id', auth, (req, res) => {
   const agent = db.prepare('SELECT agent_id, partner_status_emoji, last_emoji_update FROM agent_status WHERE agent_id = ?').get(req.params.agent_id);
   if (!agent) return res.status(404).json({ error: 'Agent not found' });
   res.json(agent);
+});
+
+// ─── v0.7.0: Projects / Task Tracking ───────────────────────────────────────
+
+// GET /api/projects — list projects (filter by status)
+app.get('/api/projects', auth, (req, res) => {
+  const { status } = req.query;
+  let sql = 'SELECT * FROM projects WHERE 1=1';
+  const params = [];
+  if (status) { sql += ' AND status = ?'; params.push(status); }
+  sql += ' ORDER BY updated_at DESC';
+  const rows = db.prepare(sql).all(...params);
+  // For each project, attach latest update
+  const latestUpdate = db.prepare(`
+    SELECT * FROM project_updates WHERE project_id = ? ORDER BY timestamp DESC LIMIT 1
+  `);
+  const result = rows.map(p => ({
+    ...p,
+    owner_agents: p.owner_agents ? JSON.parse(p.owner_agents) : [],
+    latest_update: latestUpdate.get(p.id) || null,
+  }));
+  res.json({ projects: result });
+});
+
+// POST /api/projects — create project
+app.post('/api/projects', auth, (req, res) => {
+  const { name, description, owner_agents, status, created_by, next_action, priority } = req.body;
+  if (!name) return res.status(400).json({ error: 'name required' });
+  const id = 'proj_' + uuidv4().substring(0, 8);
+  const now = new Date().toISOString();
+  db.prepare(`
+    INSERT INTO projects (id, name, description, owner_agents, status, created_by, created_at, updated_at, next_action, priority)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    id, name,
+    description || null,
+    owner_agents ? JSON.stringify(owner_agents) : null,
+    status || 'PLANNING',
+    created_by || null,
+    now, now,
+    next_action || null,
+    priority || 'MEDIUM'
+  );
+  res.json({ ok: true, id });
+});
+
+// PATCH /api/projects/:id — update project fields
+app.patch('/api/projects/:id', auth, (req, res) => {
+  const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id);
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+  const { name, description, owner_agents, status, next_action, priority } = req.body;
+  const fields = [];
+  const vals = [];
+  if (name !== undefined)        { fields.push('name = ?');         vals.push(name); }
+  if (description !== undefined) { fields.push('description = ?');  vals.push(description); }
+  if (owner_agents !== undefined){ fields.push('owner_agents = ?'); vals.push(JSON.stringify(owner_agents)); }
+  if (status !== undefined)      { fields.push('status = ?');       vals.push(status); }
+  if (next_action !== undefined) { fields.push('next_action = ?');  vals.push(next_action); }
+  if (priority !== undefined)    { fields.push('priority = ?');     vals.push(priority); }
+  if (fields.length === 0) return res.status(400).json({ error: 'No fields to update' });
+  fields.push("updated_at = datetime('now')");
+  vals.push(req.params.id);
+  db.prepare(`UPDATE projects SET ${fields.join(', ')} WHERE id = ?`).run(...vals);
+  res.json({ ok: true });
+});
+
+// POST /api/projects/:id/updates — add a progress update
+app.post('/api/projects/:id/updates', auth, (req, res) => {
+  const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id);
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+  const { agent_id, content, new_status } = req.body;
+  if (!content) return res.status(400).json({ error: 'content required' });
+  const id = 'upd_' + uuidv4().substring(0, 8);
+  const now = new Date().toISOString();
+  db.prepare(`
+    INSERT INTO project_updates (id, project_id, agent_id, timestamp, content, new_status)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(id, req.params.id, agent_id || null, now, content, new_status || null);
+  // If status change provided, update project status too
+  if (new_status) {
+    db.prepare(`UPDATE projects SET status = ?, updated_at = ? WHERE id = ?`).run(new_status, now, req.params.id);
+  } else {
+    db.prepare(`UPDATE projects SET updated_at = ? WHERE id = ?`).run(now, req.params.id);
+  }
+  res.json({ ok: true, id });
+});
+
+// GET /api/projects/:id/updates — get updates for a project
+app.get('/api/projects/:id/updates', auth, (req, res) => {
+  const { limit = 20 } = req.query;
+  const rows = db.prepare('SELECT * FROM project_updates WHERE project_id = ? ORDER BY timestamp DESC LIMIT ?')
+    .all(req.params.id, parseInt(limit));
+  res.json({ updates: rows.reverse() });
 });
 
 // POST /api/admin/seed-defaults — Re-seed default agents if DB is empty (safe to call on restart)
