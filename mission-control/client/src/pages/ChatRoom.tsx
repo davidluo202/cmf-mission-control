@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { getChatMessages, sendChatMessage, clearChatMessages } from '../api';
 import { format, isToday, isYesterday, isSameDay } from 'date-fns';
 import {
-  Send, Users, Loader2, Hash, AtSign, ArrowDown,
+  Send, Loader2, Hash, AtSign, ArrowDown,
   Search, X, Trash2, MessageSquare,
 } from 'lucide-react';
 
