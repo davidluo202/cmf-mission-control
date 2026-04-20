@@ -14,6 +14,7 @@ const CHANNELS: { id: string; label: string; emoji: string }[] = [
   { id: 'general',   label: 'General',   emoji: '🏠' },
   { id: 'mc',        label: 'MC平台',    emoji: '🖥️' },
   { id: 'financial', label: 'Financial', emoji: '💰' },
+  { id: 'ibtrade',   label: 'IB Trade',  emoji: '📈' },
 ];
 
 function generateClientMessageId(): string {

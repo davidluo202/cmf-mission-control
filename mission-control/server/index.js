@@ -286,8 +286,9 @@ app.get('/api/agents/:id/timeline', auth, (req, res) => {
 function inferChannel(content = '', channel = '') {
   if (channel) return channel;
   const lower = content.toLowerCase();
+  if (/\b(ib.?trade|ibkr|ibeam|paper.?trade|pairs.?trad|z.?score|tws|client.?portal|iserver|tickle|keepalive|runner|strategy|買入|卖出|开仓|平仓|操盘|做多|做空|止损|止盈)\b/.test(lower)) return 'ibtrade';
   if (/\b(mc|mission.?control|deploy|railway|build|gateway|openclaw|agent|incident|proposal|heartbeat)\b/.test(lower)) return 'mc';
-  if (/\b(financial|trading|ib|ibkr|strategy|profit|loss|account|dividend|portfolio|stock|pairs|backtest)\b/.test(lower)) return 'financial';
+  if (/\b(financial|compliance|牌照|sfc|otc|衍生品|frr|capital|监管)\b/.test(lower)) return 'financial';
   return 'general';
 }
 
