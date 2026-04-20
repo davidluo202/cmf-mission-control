@@ -9,6 +9,13 @@ import {
 const KNOWN_AGENTS = ['Nova', 'Qual', 'Icy', 'Imax', 'Nas', 'Binghome', 'David'];
 const TOPICS = ['General', 'Deploy', 'Bug', 'Proposal', 'Urgent'];
 
+const CHANNELS: { id: string; label: string; emoji: string }[] = [
+  { id: '',          label: 'All',       emoji: '💬' },
+  { id: 'general',   label: 'General',   emoji: '🏠' },
+  { id: 'mc',        label: 'MC平台',    emoji: '🖥️' },
+  { id: 'financial', label: 'Financial', emoji: '💰' },
+];
+
 function generateClientMessageId(): string {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
     const r = (Math.random() * 16) | 0;
@@ -61,6 +68,7 @@ export default function ChatRoom() {
   const [sending, setSending] = useState(false);
   const [topic, setTopic] = useState('General');
   const [filterTopic, setFilterTopic] = useState<string>('');
+  const [activeChannel, setActiveChannel] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearch, setShowSearch] = useState(false);
   const [showMentionHint, setShowMentionHint] = useState(false);
@@ -74,7 +82,7 @@ export default function ChatRoom() {
   const searchRef = useRef<HTMLInputElement>(null);
 
   const loadMessages = async () => {
-    const data = await getChatMessages(200);
+    const data = await getChatMessages(200, activeChannel || undefined);
     setMessages(data);
   };
 
@@ -82,7 +90,7 @@ export default function ChatRoom() {
     loadMessages();
     const timer = setInterval(loadMessages, 3000);
     return () => clearInterval(timer);
-  }, []);
+  }, [activeChannel]);
 
   useEffect(() => {
     if (autoScroll && !searchQuery) {
@@ -135,6 +143,7 @@ export default function ChatRoom() {
         topic,
         mentions: mentions.length > 0 ? mentions : null,
         client_message_id: clientMessageId,
+        channel: activeChannel || undefined,
       });
       await loadMessages();
     } finally {
@@ -189,11 +198,30 @@ export default function ChatRoom() {
 
   return (
     <div className="flex flex-col h-[calc(100vh-9rem)] bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+      {/* Channel tabs */}
+      <div className="flex items-center gap-0.5 px-3 pt-2 border-b border-gray-200 bg-gray-50 shrink-0">
+        {CHANNELS.map(ch => (
+          <button
+            key={ch.id}
+            onClick={() => { setActiveChannel(ch.id); setFilterTopic(''); setSearchQuery(''); }}
+            className={`flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-t-lg transition-colors border-b-2 -mb-px ${
+              activeChannel === ch.id
+                ? 'border-blue-500 text-blue-600 bg-white'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+            }`}
+          >
+            <span>{ch.emoji}</span>
+            {ch.label}
+          </button>
+        ))}
+      </div>
+
       {/* Header */}
-      <div className="px-4 py-3 border-b border-gray-200 bg-gray-50 flex items-center justify-between gap-2 shrink-0">
+      <div className="px-4 py-2 border-b border-gray-200 bg-gray-50 flex items-center justify-between gap-2 shrink-0">
         <div className="flex items-center gap-2 min-w-0">
-          <Users className="w-4 h-4 text-blue-500 shrink-0" />
-          <h3 className="font-semibold text-gray-900 text-sm">Meeting Room</h3>
+          <h3 className="font-semibold text-gray-900 text-sm">
+            {CHANNELS.find(c => c.id === activeChannel)?.label || 'All'} Chat
+          </h3>
           <span className="text-xs text-gray-400 bg-gray-100 rounded-full px-2 py-0.5 font-mono shrink-0">
             {filteredMessages.length} msg{filteredMessages.length !== 1 ? 's' : ''}
           </span>

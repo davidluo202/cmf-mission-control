@@ -70,6 +70,9 @@ const migrations = [
     acknowledged_by TEXT,
     acknowledged_at TEXT
   )`,
+  // v0.8.0: multi-channel chatroom
+  `ALTER TABLE chat_messages ADD COLUMN channel TEXT DEFAULT 'general'`,
+  `ALTER TABLE chat_messages ADD COLUMN source TEXT`,
   // v0.7.0: projects / task tracking
   `CREATE TABLE IF NOT EXISTS projects (
     id TEXT PRIMARY KEY,
@@ -279,16 +282,30 @@ app.get('/api/agents/:id/timeline', auth, (req, res) => {
   res.json({ events: rows });
 });
 
+// Channel routing helper — maps content keywords to channel names
+function inferChannel(content = '', channel = '') {
+  if (channel) return channel;
+  const lower = content.toLowerCase();
+  if (/\b(mc|mission.?control|deploy|railway|build|gateway|openclaw|agent|incident|proposal|heartbeat)\b/.test(lower)) return 'mc';
+  if (/\b(financial|trading|ib|ibkr|strategy|profit|loss|account|dividend|portfolio|stock|pairs|backtest)\b/.test(lower)) return 'financial';
+  return 'general';
+}
+
 // GET /api/chatroom/messages (会议室拉取)
 app.get('/api/chatroom/messages', auth, (req, res) => {
-  const { limit = 50 } = req.query;
-  const rows = db.prepare('SELECT * FROM chat_messages ORDER BY timestamp DESC LIMIT ?').all(parseInt(limit));
+  const { limit = 50, channel } = req.query;
+  let rows;
+  if (channel) {
+    rows = db.prepare('SELECT * FROM chat_messages WHERE channel = ? ORDER BY timestamp DESC LIMIT ?').all(channel, parseInt(limit));
+  } else {
+    rows = db.prepare('SELECT * FROM chat_messages ORDER BY timestamp DESC LIMIT ?').all(parseInt(limit));
+  }
   res.json({ messages: rows.reverse() });
 });
 
 // POST /api/chatroom/messages (发到会议室)
 app.post('/api/chatroom/messages', auth, (req, res) => {
-  const { sender, content, mentions, topic, client_message_id } = req.body;
+  const { sender, content, mentions, topic, client_message_id, channel } = req.body;
   if (!sender || !content) return res.status(400).json({ error: 'sender and content required' });
 
   // Idempotency: if client_message_id provided and already exists, return ok without inserting
@@ -297,18 +314,41 @@ app.post('/api/chatroom/messages', auth, (req, res) => {
     if (existing) return res.json({ ok: true, id: existing.id, deduplicated: true });
   }
 
+  const resolvedChannel = inferChannel(content, channel);
   const id = uuidv4();
   db.prepare(`
-    INSERT OR IGNORE INTO chat_messages (id, sender, timestamp, content, mentions, topic, client_message_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(id, sender, new Date().toISOString(), content, mentions ? JSON.stringify(mentions) : null, topic || null, client_message_id || null);
-  res.json({ ok: true, id });
+    INSERT OR IGNORE INTO chat_messages (id, sender, timestamp, content, mentions, topic, client_message_id, channel)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, sender, new Date().toISOString(), content, mentions ? JSON.stringify(mentions) : null, topic || null, client_message_id || null, resolvedChannel);
+  res.json({ ok: true, id, channel: resolvedChannel });
 });
 
 // DELETE /api/chatroom/messages (clear all chat — admin only)
 app.delete('/api/chatroom/messages', auth, (req, res) => {
   db.prepare('DELETE FROM chat_messages').run();
   res.json({ ok: true });
+});
+
+// POST /api/chatroom/sync-telegram (Mac mini bridge → MC chatroom)
+app.post('/api/chatroom/sync-telegram', auth, (req, res) => {
+  const { sender, content, chat_name, message_id, timestamp, channel: requestedChannel } = req.body;
+  if (!sender || !content) return res.status(400).json({ error: 'sender and content required' });
+
+  // Deduplicate by Telegram message_id (used as client_message_id)
+  const tgMsgId = message_id ? `tg_${message_id}` : null;
+  if (tgMsgId) {
+    const existing = db.prepare('SELECT id FROM chat_messages WHERE client_message_id = ?').get(tgMsgId);
+    if (existing) return res.json({ ok: true, id: existing.id, deduplicated: true });
+  }
+
+  const resolvedChannel = inferChannel(content, requestedChannel);
+  const id = uuidv4();
+  const ts = timestamp || new Date().toISOString();
+  db.prepare(`
+    INSERT OR IGNORE INTO chat_messages (id, sender, timestamp, content, topic, client_message_id, channel, source)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'telegram')
+  `).run(id, sender, ts, content, chat_name || null, tgMsgId, resolvedChannel);
+  res.json({ ok: true, id, channel: resolvedChannel });
 });
 
 // POST /api/proposals (提交提案)

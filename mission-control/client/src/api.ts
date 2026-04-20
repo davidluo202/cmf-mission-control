@@ -24,8 +24,8 @@ export const api = axios.create({
 export const getAgents      = () => api.get('/agents').then(r => r.data.agents);
 export const getProposals   = () => api.get('/proposals').then(r => r.data.proposals);
 export const getIncidents   = () => api.get('/incidents').then(r => r.data.incidents);
-export const getChatMessages = (limit = 200) =>
-  api.get(`/chatroom/messages?limit=${limit}`).then(r => r.data.messages);
+export const getChatMessages = (limit = 200, channel?: string) =>
+  api.get(`/chatroom/messages`, { params: { limit, ...(channel ? { channel } : {}) } }).then(r => r.data.messages);
 
 export const sendChatMessage  = (payload: any) => api.post('/chatroom/messages', payload);
 export const clearChatMessages = ()             => api.delete('/chatroom/messages');
