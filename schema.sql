@@ -67,7 +67,9 @@ INSERT OR IGNORE INTO agent_status (agent_id, agent_name, model_name) VALUES
     ('qual', 'Qual (QA)', 'zai/glm-5'),
     ('imax', 'Imax (DevOps)', 'google/gemini-3.1-pro'),
     ('nas', 'Nas (Research)', 'anthropic/claude-sonnet-4-6'),
-    ('davvy', 'Davvy (PM)', 'minimax/MiniMax-M2.5');
+    ('davvy', 'Davvy (PM)', 'minimax/MiniMax-M2.5'),
+    ('claude', 'Claude (AI Assistant)', 'anthropic/claude-opus-4-6'),
+    ('cody', 'Cody (Dev)', NULL);
 
 -- Host machine info table (one per machine, linked to agents)
 CREATE TABLE IF NOT EXISTS host_info (
@@ -115,4 +117,28 @@ CREATE TABLE IF NOT EXISTS messages (
     created_at TEXT DEFAULT (datetime('now')),
     read_at TEXT
 );
+
+-- Chat rooms (group channels)
+CREATE TABLE IF NOT EXISTS chat_rooms (
+    room_id TEXT PRIMARY KEY,
+    room_name TEXT NOT NULL,
+    description TEXT,
+    members TEXT NOT NULL, -- JSON array of member ids
+    created_by TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+
+-- Chat room messages
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    room_id TEXT NOT NULL REFERENCES chat_rooms(room_id),
+    from_agent TEXT NOT NULL,
+    content TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+
+-- Seed initial chat rooms
+INSERT OR IGNORE INTO chat_rooms (room_id, room_name, description, members, created_by) VALUES
+    ('ib-trade', 'IB Trade', 'Interactive Brokers trading discussions', '["david","icy","cody","nas"]', 'david');
 

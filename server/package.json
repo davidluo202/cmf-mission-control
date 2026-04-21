@@ -1,6 +1,6 @@
 {
   "name": "cmf-mission-control-server",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "CMF Mission Control Cloud Server (Express + SQLite, Railway-ready)",
   "main": "index.js",
   "scripts": {

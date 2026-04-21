@@ -1,7 +1,7 @@
 /**
  * CMF Mission Control Server - Canton Financial AI Team
  * Cloud Backend: Express + SQLite (Railway-ready)
- * Version: 0.2.0 | 2026-03-24
+ * Version: 0.3.0 | 2026-04-20
  * Author: Nova (Lead Developer)
  */
 
@@ -96,6 +96,22 @@ if (fs.existsSync(SCHEMA_PATH)) {
       created_at TEXT DEFAULT (datetime('now')),
       read_at TEXT
     );
+    CREATE TABLE IF NOT EXISTS chat_rooms (
+      room_id TEXT PRIMARY KEY,
+      room_name TEXT NOT NULL,
+      description TEXT,
+      members TEXT NOT NULL,
+      created_by TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS chat_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      room_id TEXT NOT NULL REFERENCES chat_rooms(room_id),
+      from_agent TEXT NOT NULL,
+      content TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
   `);
 }
 
@@ -161,7 +177,7 @@ app.get('/', (req, res) => {
   const eventCount = db.prepare('SELECT COUNT(*) as c FROM events').get().c;
   res.json({
     service: 'CMF Mission Control Server',
-    version: '0.2.0',
+    version: '0.3.0',
     status: 'running',
     endpoints: [
       'GET  /dashboard  (可视化面板)',
@@ -177,7 +193,13 @@ app.get('/', (req, res) => {
       'POST /api/task',
       'POST /api/decision',
       'POST /api/message',
-      'POST /api/message/read'
+      'POST /api/message/read',
+      'GET  /api/rooms',
+      'GET  /api/rooms/:room_id',
+      'POST /api/rooms',
+      'PUT  /api/rooms/:room_id',
+      'POST /api/rooms/:room_id/messages',
+      'GET  /api/rooms/:room_id/messages'
     ],
     db: { agents: agentCount, events: eventCount }
   });
@@ -190,7 +212,7 @@ app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
     service: 'cmf-mission-control',
-    version: '0.2.0',
+    version: '0.3.0',
     db: { agents: agentCount, events: eventCount }
   });
 });
@@ -443,6 +465,92 @@ app.get('/api/decisions', auth, (req, res) => {
   res.json({ decisions: rows });
 });
 
+// ─── Chat Rooms API ──────────────────────────────────────────────────────────
+
+// GET /api/rooms - 查询所有频道
+app.get('/api/rooms', auth, (req, res) => {
+  const rows = db.prepare('SELECT * FROM chat_rooms ORDER BY created_at DESC').all();
+  res.json({ rooms: rows.map(r => ({ ...r, members: JSON.parse(r.members) })) });
+});
+
+// GET /api/rooms/:room_id - 查询单个频道详情
+app.get('/api/rooms/:room_id', auth, (req, res) => {
+  const room = db.prepare('SELECT * FROM chat_rooms WHERE room_id = ?').get(req.params.room_id);
+  if (!room) return res.status(404).json({ error: 'Room not found' });
+  res.json({ room: { ...room, members: JSON.parse(room.members) } });
+});
+
+// POST /api/rooms - 创建频道
+app.post('/api/rooms', auth, (req, res) => {
+  const { room_id, room_name, description, members, created_by } = req.body;
+  if (!room_id || !room_name || !members) return res.status(400).json({ error: 'room_id, room_name, and members required' });
+
+  db.prepare(`
+    INSERT INTO chat_rooms (room_id, room_name, description, members, created_by)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(room_id, room_name, description || null, JSON.stringify(members), created_by || null);
+
+  res.json({ ok: true, room_id });
+});
+
+// PUT /api/rooms/:room_id - 更新频道（成员、描述等）
+app.put('/api/rooms/:room_id', auth, (req, res) => {
+  const { room_name, description, members } = req.body;
+  const room = db.prepare('SELECT * FROM chat_rooms WHERE room_id = ?').get(req.params.room_id);
+  if (!room) return res.status(404).json({ error: 'Room not found' });
+
+  db.prepare(`
+    UPDATE chat_rooms SET
+      room_name = COALESCE(?, room_name),
+      description = COALESCE(?, description),
+      members = COALESCE(?, members),
+      updated_at = datetime('now')
+    WHERE room_id = ?
+  `).run(room_name || null, description || null, members ? JSON.stringify(members) : null, req.params.room_id);
+
+  res.json({ ok: true });
+});
+
+// POST /api/rooms/:room_id/messages - 发送频道消息
+app.post('/api/rooms/:room_id/messages', auth, (req, res) => {
+  const { from_agent, content } = req.body;
+  if (!from_agent || !content) return res.status(400).json({ error: 'from_agent and content required' });
+
+  const room = db.prepare('SELECT * FROM chat_rooms WHERE room_id = ?').get(req.params.room_id);
+  if (!room) return res.status(404).json({ error: 'Room not found' });
+
+  const result = db.prepare(`
+    INSERT INTO chat_messages (room_id, from_agent, content)
+    VALUES (?, ?, ?)
+  `).run(req.params.room_id, from_agent, content);
+
+  // SSE push to all room members who are listening
+  const members = JSON.parse(room.members);
+  const payload = JSON.stringify({
+    type: 'room_message',
+    room_id: req.params.room_id,
+    message: { id: result.lastInsertRowid, room_id: req.params.room_id, from_agent, content }
+  });
+  for (const member of members) {
+    if (member !== from_agent && sseClients.has(member)) {
+      sseClients.get(member).write(`data: ${payload}\n\n`);
+    }
+  }
+
+  res.json({ ok: true, id: result.lastInsertRowid });
+});
+
+// GET /api/rooms/:room_id/messages - 查询频道消息
+app.get('/api/rooms/:room_id/messages', auth, (req, res) => {
+  const { limit = 50, before } = req.query;
+  let query = 'SELECT * FROM chat_messages WHERE room_id = ?';
+  const params = [req.params.room_id];
+  if (before) { query += ' AND id < ?'; params.push(parseInt(before)); }
+  query += ' ORDER BY created_at DESC LIMIT ?';
+  params.push(parseInt(limit));
+  res.json({ messages: db.prepare(query).all(...params) });
+});
+
 // Critical Alerts API
 app.get('/api/alerts', auth, (req, res) => {
   const rows = db.prepare(
@@ -471,7 +579,7 @@ setInterval(() => {
 
 // ─── Start Server ─────────────────────────────────────────────────────────────
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`✅ CMF Mission Control Server v0.2.0`);
+  console.log(`✅ CMF Mission Control Server v0.3.0`);
   console.log(`   Port:     ${PORT}`);
   console.log(`   DB:       ${DB_PATH}`);
   console.log(`   Auth:     ${API_TOKEN ? 'enabled (API_TOKEN set)' : 'DISABLED (dev mode)'}`);
