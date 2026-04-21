@@ -6,7 +6,7 @@ import {
   Search, X, Trash2, MessageSquare,
 } from 'lucide-react';
 
-const KNOWN_AGENTS = ['Nova', 'Qual', 'Icy', 'Imax', 'Nas', 'Binghome', 'Claude', 'Cody', 'Renee', 'David'];
+const KNOWN_AGENTS = ['Nova', 'Qual', 'Icy', 'Imax', 'Nas', 'Davvy', 'Claude', 'Cody', 'Renee', 'David'];
 const TOPICS = ['General', 'Deploy', 'Bug', 'Proposal', 'Urgent'];
 
 const CHANNELS: { id: string; label: string; emoji: string }[] = [

@@ -88,7 +88,11 @@ function Sidebar({
           </button>
         </div>
 
-        <nav className="flex-1 px-3 py-5 space-y-1">
+        <div className="px-4 pt-3 pb-1">
+          <span className="text-[10px] font-semibold text-blue-400 tracking-widest uppercase">v0.8.0</span>
+        </div>
+
+        <nav className="flex-1 px-3 py-2 space-y-1">
           {navLinks.map(link => (
             <Link
               key={link.to}
@@ -264,7 +268,6 @@ function App() {
                 <h2 className="text-sm lg:text-base font-semibold text-gray-800 leading-tight truncate">
                   Canton Financial AI Team
                 </h2>
-                <p className="text-xs text-gray-400 hidden sm:block">Mission Control <span className="font-semibold text-blue-500">v0.8.0</span></p>
               </div>
             </div>
 
