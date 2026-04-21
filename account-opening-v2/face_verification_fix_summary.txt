@@ -1,0 +1,30 @@
+人臉識別保存失敗問題修復總結（2026-01-30）
+
+問題診斷：
+1. 用戶報告：人臉識別驗證成功後點擊"下一步"，提示"保存失敗，請稍後再試"
+2. 根本原因：selfieImage是base64編碼的圖片（通常幾百KB），但數據庫的verificationData字段是text類型（最大64KB），導致數據保存失敗
+
+修復方案：
+1. 修改server/routers.ts中的faceVerification.save API：
+   - 修改input schema，接收faceImageData（base64）和confidence
+   - 將base64圖片上傳到S3，獲取URL
+   - 在verificationData中只存儲S3 URL，而不是base64字符串
+
+2. 修改client/src/pages/steps/FaceVerification.tsx：
+   - 修改handleNext函數，傳遞faceImageData和confidence給API
+   - 移除verificationData對象，改為直接傳遞參數
+
+技術細節：
+- 使用storagePut將圖片上傳到S3的face-verification目錄
+- 文件命名：face-verification/{userId}/{applicationId}-{timestamp}.jpg
+- 數據庫中存儲的verificationData包含：faceImageUrl、verifiedAt、confidence
+
+優勢：
+1. 解決了text字段大小限制問題
+2. 減少數據庫存儲壓力
+3. 提高API響應速度（請求體更小）
+4. 圖片可以通過S3 URL直接訪問
+
+測試狀態：
+- TypeScript檢查通過
+- 等待用戶實際測試驗證

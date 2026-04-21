@@ -1,0 +1,24 @@
+新PDF文件分析结果 (CMF-ACAPP-260226-001.pdf - 23:42版本)
+=====================================
+
+✅ 签名部分已修复：
+- 第3页显示"签名 Signature: xintao Luo"（正确！）
+- 之前显示"N/A"，现在显示客户的英文名
+
+❌ 风险评估问卷仍然有问题：
+- 第2页"5. 投资信息 Investment Information"部分显示：
+  "风险承受能力 Risk Tolerance: N/A"
+  
+- 应该显示：
+  "风险承受能力 Risk Tolerance: Medium to High / 中等至高
+  
+  You have an above-average tolerance to risk and are willing to accept a greater chance of decline in value for the potentially higher returns. 您對風險的承受程度較平均高並願意接受大機會的投資跌值去賺取較高的潛在回報。
+  
+  （基於風險評估問卷總分: 580）"
+
+问题原因：
+PDF生成器第599-610行的代码修改了，但是条件判断失败了。
+需要检查：
+1. data.riskQuestionnaire是否为null或undefined
+2. data.riskQuestionnaire.riskLevel是否为空
+3. 后端API是否正确传递了riskQuestionnaire数据
